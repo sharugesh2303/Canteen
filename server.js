@@ -63,7 +63,8 @@ if (!mongoURI) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 10000; // Default to 10000 if not set
+// Use 10000 as fallback, which is what Render uses
+const PORT = process.env.PORT || 10000; 
 
 // --- Nodemailer Transporter Setup ---
 const transporter = nodemailer.createTransport({
@@ -79,7 +80,7 @@ const transporter = nodemailer.createTransport({
 // ================================================
 // !!! VERCEL DEPLOYMENT FIX 1: CORS !!!
 // ================================================
-// Replace app.use(cors()); with this:
+// This is the fix for your "Network connection failed" error.
 const whitelist = [
     'https://cheful.vercel.app',              // Your chef app
     // Add your other frontend URLs here as you deploy them
@@ -89,9 +90,10 @@ const whitelist = [
 
 // Add http://localhost for your local development
 if (process.env.NODE_ENV !== 'production') {
-    whitelist.push('http://localhost:5173'); // Student
-    whitelist.push('http://localhost:5174'); // Admin
-    whitelist.push('http://localhost:5175'); // Chef (Update ports if needed)
+    // Add all your local frontend ports
+    whitelist.push('http://localhost:5173'); 
+    whitelist.push('http://localhost:5174');
+    whitelist.push('http://localhost:5175');
 }
 
 const corsOptions = {
@@ -526,7 +528,6 @@ app.post('/api/menu', adminAuth, upload.single('image'), async (req, res) => {
     // ================================================
     // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
     // ================================================
-    // const imageUrl = req.file ? `http://localhost:${PORT}/uploads/${req.file.filename}` : ''; // OLD
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : ''; // NEW
     // ================================================
     // !!! END VERCEL FIX 2 !!!
@@ -592,7 +593,6 @@ app.put('/api/menu/:id', adminAuth, upload.single('image'), async (req, res) => 
         // ================================================
         // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
         // ================================================
-        // updateData.imageUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`; // OLD
         updateData.imageUrl = `/uploads/${req.file.filename}`; // NEW
         // ================================================
         // !!! END VERCEL FIX 2 !!!
@@ -880,7 +880,6 @@ app.post('/api/admin/advertisements', adminAuth, upload.single('image'), async (
         // ================================================
         // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
         // ================================================
-        // const imageUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`; // OLD
         const imageUrl = `/uploads/${req.file.filename}`; // NEW
         // ================================================
         // !!! END VERCEL FIX 2 !!!
@@ -907,7 +906,7 @@ app.delete('/api/admin/advertisements/:id', adminAuth, async (req, res) => {
 app.patch('/api/admin/advertisements/:id/toggle', adminAuth, async (req, res) => {
     try {
         const ad = await Advertisement.findById(req.params.id);
-        if (!ad) return res.status(404).json({ msg: 'Advertisement not found' });
+        if (!ad) return res.status(4404).json({ msg: 'Advertisement not found' });
         ad.isActive = !ad.isActive;
         await ad.save();
         res.json(ad);
@@ -933,7 +932,6 @@ app.post('/api/admin/subcategories', [adminAuth, upload.single('image')], async 
     // ================================================
     // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
     // ================================================
-    // const imageUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`; // OLD
     const imageUrl = `/uploads/${req.file.filename}`; // NEW
     // ================================================
     // !!! END VERCEL FIX 2 !!!
@@ -1058,6 +1056,8 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
 // ================================================
 
 // Start the server
+// Bind to 0.0.0.0 to be accessible in container environments like Render
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
+
