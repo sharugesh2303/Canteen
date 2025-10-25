@@ -83,7 +83,8 @@ const transporter = nodemailer.createTransport({
 // This list allows your deployed apps AND your local dev servers
 // THIS IS THE FIX (CORRECT)
 const whitelist = [
-    'https://chefui.vercel.app',      // ✅ CORRECT URL
+    'https://chefui.vercel.app',
+    'https://jj-canteen-admin.vercel.app/login',      // ✅ CORRECT URL
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',
