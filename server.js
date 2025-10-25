@@ -78,20 +78,16 @@ const transporter = nodemailer.createTransport({
 // --- Middleware Setup ---
 
 // ================================================
-// !!! CORS FIX: Added localhost for development !!!
+// !!! CORS FIX: Updated Admin URL !!!
 // ================================================
-// This list allows your deployed apps AND your local dev servers
-// THIS IS THE FIX (CORRECT)
 const whitelist = [
     'https://chefui.vercel.app',
-    'https://jj-canteen-admin.vercel.app/login',      // ✅ CORRECT URL
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:5175',
+    'https://jj-canteen-admin.vercel.app',  // ✅ CORRECTED URL (no /login)
+    'http://localhost:5173',                // local student
+    'http://localhost:5174',                // local chef
+    'http://localhost:5175',                // local admin
     // Add any other deployed frontend URLs here as you make them
 ];
-
-
 
 const corsOptions = {
     origin: function (origin, callback) {
