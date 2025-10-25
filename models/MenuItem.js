@@ -1,15 +1,37 @@
-// models/MenuItem.js
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
-const MenuItemSchema = new mongoose.Schema({
-    // ... your existing fields: name, price, category, imageUrl, isAvailable
-    name: { type: String, required: true },
-    price: { type: Number, required: true },
-    category: { type: String, required: true },
-    imageUrl: { type: String },
-    isAvailable: { type: Boolean, default: true },
-    // --- ADD THIS LINE ---
-    stock: { type: Number, required: true, default: 0 }
+const MenuItemSchema = new Schema({
+    name: {
+        type: String,
+        required: true
+    },
+    price: {
+        type: Number,
+        required: true
+    },
+    category: {
+        type: String,
+        required: true
+    },
+    subCategory: { // *** NEW FIELD: SubCategory reference ***
+        type: Schema.Types.ObjectId,
+        ref: 'subcategory', // References the 'subcategory' model
+        required: false // Can be optional if not all items have subcategories
+    },
+    imageUrl: {
+        type: String,
+        required: true
+    },
+    stock: { // *** CHANGED: from isAvailable to stock (Number) ***
+        type: Number,
+        required: true,
+        default: 0
+    },
+    uploadedAt: {
+        type: Date,
+        default: Date.now
+    }
 });
 
-module.exports = mongoose.model('MenuItem', MenuItemSchema);
+module.exports = mongoose.model('menuItem', MenuItemSchema);

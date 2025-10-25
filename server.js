@@ -78,23 +78,18 @@ const transporter = nodemailer.createTransport({
 // --- Middleware Setup ---
 
 // ================================================
-// !!! VERCEL DEPLOYMENT FIX 1: CORS !!!
+// !!! VERCEL DEPLOYMENT FIX 1: CORS (FINAL) !!!
 // ================================================
-// This is the fix for your "Network connection failed" error.
+// This list allows your deployed apps AND your local dev servers
 const whitelist = [
-    'https://cheful.vercel.app',              // Your chef app
-    // Add your other frontend URLs here as you deploy them
+    'https://chefui.vercel.app/',      // Your DEPLOYED chef app
+    'http://localhost:5173',          // Your LOCAL student app
+    'http://localhost:5174',          // Your LOCAL chef app
+    'http://localhost:5175',          // Your LOCAL admin app
+    // Add your other deployed frontend URLs here as you make them
     // 'https://your-student-app.vercel.app',
     // 'https://your-admin-app.vercel.app'
 ];
-
-// Add http://localhost for your local development
-if (process.env.NODE_ENV !== 'production') {
-    // Add all your local frontend ports
-    whitelist.push('http://localhost:5173');
-    whitelist.push('http://localhost:5174');
-    whitelist.push('http://localhost:5175');
-}
 
 const corsOptions = {
     origin: function (origin, callback) {
@@ -104,11 +99,12 @@ const corsOptions = {
         } else {
             callback(new Error(`Not allowed by CORS: ${origin}`));
         }
-    }
+    },
+    credentials: true,
 };
 app.use(cors(corsOptions));
 // ================================================
-// !!! END VERCEL FIX 1 !!!
+// !!! END VERCEL FIX !!!
 // ================================================
 
 app.use(express.json());
@@ -122,7 +118,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- Database Connection (UPDATED) ---
+// --- Database Connection (Correctly uses env var) ---
 mongoose.connect(mongoURI)
     .then(() => {
         console.log('MongoDB Connected...');
@@ -1038,7 +1034,7 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
         const sub = await SubCategory.findByIdAndDelete(id);
 
         if (!sub) {
-            return res.status(404).json({ msg: 'Subcategory not found' });
+            return res.status(4404).json({ msg: 'Subcategory not found' });
         }
 
         // Optional: Delete the image file associated with the subcategory from /uploads
@@ -1063,4 +1059,3 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
-
