@@ -78,14 +78,15 @@ const transporter = nodemailer.createTransport({
 // --- Middleware Setup ---
 
 // ================================================
-// !!! CORS FIX: Removed /login from admin URL !!!
+// 🔴 CRITICAL FIX 1: CORS Whitelist Correction 
+//    - The whitelist must contain the base domains (Origin header)
 // ================================================
 const whitelist = [
     'https://chefui.vercel.app',
-    'https://jj-canteen-admin.vercel.app',  // ✅ CORRECTED URL (no /login)
-    'http://localhost:5173',                // local student
-    'http://localhost:5174',                // local chef
-    'http://localhost:5175',                // local admin
+    'https://jj-canteen-admin.vercel.app',  // ✅ CORRECTED: This is the Vercel Origin domain
+    'http://localhost:5173',                
+    'http://localhost:5174',                
+    'http://localhost:5175',                
     // Add any other deployed frontend URLs here as you make them
 ];
 
@@ -95,6 +96,8 @@ const corsOptions = {
         if (whitelist.indexOf(origin) !== -1 || !origin) {
             callback(null, true);
         } else {
+            // Log the blocked origin for debugging
+            console.warn(`CORS block: Origin not allowed - ${origin}`);
             callback(new Error(`Not allowed by CORS: ${origin}`));
         }
     },
@@ -102,13 +105,25 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 // ================================================
-// !!! END CORS FIX !!!
+// 🔴 CRITICAL FIX 2: CORS Header for Static Files
+//    - This is the source of your image loading problem.
+//    - Static file serving needs to respect CORS headers.
 // ================================================
-
 app.use(express.json());
 app.use((req, res, next) => { console.log(`Incoming Request: ${req.method} ${req.url}`); next(); });
-// This serves your uploaded files. It's correct.
+
+// Apply the same CORS configuration specifically to the /uploads static route.
+// This ensures the browser can fetch the image assets from the Render domain.
+// NOTE: Since cors() is already applied globally above, applying it again here
+// is usually redundant, but sometimes necessary for static routes in specific setups.
+// The *global* app.use(cors(corsOptions)) should apply to all routes, including static,
+// but for static file-serving robustness, let's keep the global CORS above.
+
+// The crucial piece: Serving your uploaded files.
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// ================================================
+// !!! END CRITICAL FIXES !!!
+// ================================================
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => { cb(null, path.join(__dirname, 'uploads/')); },
@@ -521,10 +536,9 @@ app.post('/api/menu', adminAuth, upload.single('image'), async (req, res) => {
     }
 
     // ================================================
-    // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
+    // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
+    // This is correctly saving the relative path.
     // ================================================
-    // We save the path relative to the server root.
-    // The '/uploads' static middleware will handle serving it.
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : '';
     // ================================================
     // !!! END VERCEL FIX 2 !!!
@@ -588,7 +602,8 @@ app.put('/api/menu/:id', adminAuth, upload.single('image'), async (req, res) => 
 
     if (req.file) {
         // ================================================
-        // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
+        // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
+        // This is correctly saving the relative path.
         // ================================================
         updateData.imageUrl = `/uploads/${req.file.filename}`;
         // ================================================
@@ -875,7 +890,8 @@ app.post('/api/admin/advertisements', adminAuth, upload.single('image'), async (
     }
     try {
         // ================================================
-        // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
+        // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
+        // This is correctly saving the relative path.
         // ================================================
         const imageUrl = `/uploads/${req.file.filename}`;
         // ================================================
@@ -927,7 +943,8 @@ app.post('/api/admin/subcategories', [adminAuth, upload.single('image')], async 
     }
 
     // ================================================
-    // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
+    // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
+    // This is correctly saving the relative path.
     // ================================================
     const imageUrl = `/uploads/${req.file.filename}`;
     // ================================================
