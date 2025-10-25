@@ -78,18 +78,19 @@ const transporter = nodemailer.createTransport({
 // --- Middleware Setup ---
 
 // ================================================
-// !!! VERCEL DEPLOYMENT FIX 1: CORS (FINAL) !!!
+// !!! CORS FIX: Added localhost for development !!!
 // ================================================
 // This list allows your deployed apps AND your local dev servers
+// THIS IS THE FIX (CORRECT)
 const whitelist = [
-    'https://chefui.vercel.app/',      // Your DEPLOYED chef app
-    'http://localhost:5173',          // Your LOCAL student app
-    'http://localhost:5174',          // Your LOCAL chef app
-    'http://localhost:5175',          // Your LOCAL admin app
-    // Add your other deployed frontend URLs here as you make them
-    // 'https://your-student-app.vercel.app',
-    // 'https://your-admin-app.vercel.app'
+    'https://chefui.vercel.app',      // ✅ CORRECT URL
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    // Add any other deployed frontend URLs here as you make them
 ];
+
+
 
 const corsOptions = {
     origin: function (origin, callback) {
@@ -104,7 +105,7 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 // ================================================
-// !!! END VERCEL FIX !!!
+// !!! END CORS FIX !!!
 // ================================================
 
 app.use(express.json());
@@ -118,7 +119,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- Database Connection (Correctly uses env var) ---
+// --- Database Connection (UPDATED) ---
 mongoose.connect(mongoURI)
     .then(() => {
         console.log('MongoDB Connected...');
@@ -1034,7 +1035,7 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
         const sub = await SubCategory.findByIdAndDelete(id);
 
         if (!sub) {
-            return res.status(4404).json({ msg: 'Subcategory not found' });
+            return res.status(404).json({ msg: 'Subcategory not found' });
         }
 
         // Optional: Delete the image file associated with the subcategory from /uploads
