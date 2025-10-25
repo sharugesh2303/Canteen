@@ -64,7 +64,7 @@ if (!mongoURI) {
 
 const app = express();
 // Use 10000 as fallback, which is what Render uses
-const PORT = process.env.PORT || 10000; 
+const PORT = process.env.PORT || 10000;
 
 // --- Nodemailer Transporter Setup ---
 const transporter = nodemailer.createTransport({
@@ -91,7 +91,7 @@ const whitelist = [
 // Add http://localhost for your local development
 if (process.env.NODE_ENV !== 'production') {
     // Add all your local frontend ports
-    whitelist.push('http://localhost:5173'); 
+    whitelist.push('http://localhost:5173');
     whitelist.push('http://localhost:5174');
     whitelist.push('http://localhost:5175');
 }
@@ -102,7 +102,7 @@ const corsOptions = {
         if (whitelist.indexOf(origin) !== -1 || !origin) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            callback(new Error(`Not allowed by CORS: ${origin}`));
         }
     }
 };
@@ -113,6 +113,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use((req, res, next) => { console.log(`Incoming Request: ${req.method} ${req.url}`); next(); });
+// This serves your uploaded files. It's correct.
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const storage = multer.diskStorage({
@@ -528,7 +529,9 @@ app.post('/api/menu', adminAuth, upload.single('image'), async (req, res) => {
     // ================================================
     // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
     // ================================================
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : ''; // NEW
+    // We save the path relative to the server root.
+    // The '/uploads' static middleware will handle serving it.
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : '';
     // ================================================
     // !!! END VERCEL FIX 2 !!!
     // ================================================
@@ -593,7 +596,7 @@ app.put('/api/menu/:id', adminAuth, upload.single('image'), async (req, res) => 
         // ================================================
         // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
         // ================================================
-        updateData.imageUrl = `/uploads/${req.file.filename}`; // NEW
+        updateData.imageUrl = `/uploads/${req.file.filename}`;
         // ================================================
         // !!! END VERCEL FIX 2 !!!
         // ================================================
@@ -813,7 +816,7 @@ app.post('/api/feedback', auth, async (req, res) => { const { feedbackText } = r
     }
 
     const student = await Student.findById(req.student.id).select('name'); const newFeedback = new Feedback({ student: req.student.id, studentName: student.name, feedbackText }); await newFeedback.save(); res.status(201).json({ message: 'Feedback submitted successfully!' }); } catch (err) { console.error("Error submitting feedback:", err.message); res.status(500).send('Server Error'); } });
-app.get('/api/admin/feedback', adminAuth, async (req, res) => { try { const feedbacks = await Feedback.find().populate('student', 'name registerNumber').sort({ createdAt: -1 }); res.json(feedbacks); } catch (err) { console.error("Error fetching feedback:", err.message); res.status(500).send('Server Error'); } });
+app.get('/api/admin/feedback', adminAuth, async (req, res) => { try { const feedbacks = await Feedback.find().populate('student', 'name registerNumber').sort({ createdAt: -1 }); res.json(feedbacks); } catch (err) { console.error("Error fetching feedback:", err.message); res.status(500).send('Server Error'); } }); // <-- Corrected line
 
 // --- Feedback "Mark as Read" Routes ---
 app.patch('/api/admin/feedback/:id/read', adminAuth, async (req, res) => {
@@ -880,7 +883,7 @@ app.post('/api/admin/advertisements', adminAuth, upload.single('image'), async (
         // ================================================
         // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
         // ================================================
-        const imageUrl = `/uploads/${req.file.filename}`; // NEW
+        const imageUrl = `/uploads/${req.file.filename}`;
         // ================================================
         // !!! END VERCEL FIX 2 !!!
         // ================================================
@@ -906,7 +909,7 @@ app.delete('/api/admin/advertisements/:id', adminAuth, async (req, res) => {
 app.patch('/api/admin/advertisements/:id/toggle', adminAuth, async (req, res) => {
     try {
         const ad = await Advertisement.findById(req.params.id);
-        if (!ad) return res.status(4404).json({ msg: 'Advertisement not found' });
+        if (!ad) return res.status(404).json({ msg: 'Advertisement not found' });
         ad.isActive = !ad.isActive;
         await ad.save();
         res.json(ad);
@@ -932,7 +935,7 @@ app.post('/api/admin/subcategories', [adminAuth, upload.single('image')], async 
     // ================================================
     // !!! VERCEL DEPLOYMENT FIX 2: Relative Image URL !!!
     // ================================================
-    const imageUrl = `/uploads/${req.file.filename}`; // NEW
+    const imageUrl = `/uploads/${req.file.filename}`;
     // ================================================
     // !!! END VERCEL FIX 2 !!!
     // ================================================
@@ -1039,7 +1042,7 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
         }
 
         // Optional: Delete the image file associated with the subcategory from /uploads
-        // (Requires parsing imageUrl and using fs module - more complex)
+        // (Requires parsing fs module - more complex)
 
         res.json({ msg: 'Subcategory deleted successfully' });
 
