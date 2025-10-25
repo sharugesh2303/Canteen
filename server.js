@@ -78,8 +78,8 @@ const transporter = nodemailer.createTransport({
 // --- Middleware Setup ---
 
 // ================================================
-// 🔴 CRITICAL FIX 1: CORS Whitelist Correction 
-//    - The whitelist must contain the base domains (Origin header)
+// 🟢 CRITICAL CORRECTION: CORS Whitelist (Origin Fix)
+// The Origin is only the domain, not the path.
 // ================================================
 const whitelist = [
     'https://chefui.vercel.app',
@@ -105,25 +105,14 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 // ================================================
-// 🔴 CRITICAL FIX 2: CORS Header for Static Files
-//    - This is the source of your image loading problem.
-//    - Static file serving needs to respect CORS headers.
+// !!! END CRITICAL CORRECTION !!!
 // ================================================
+
 app.use(express.json());
 app.use((req, res, next) => { console.log(`Incoming Request: ${req.method} ${req.url}`); next(); });
 
-// Apply the same CORS configuration specifically to the /uploads static route.
-// This ensures the browser can fetch the image assets from the Render domain.
-// NOTE: Since cors() is already applied globally above, applying it again here
-// is usually redundant, but sometimes necessary for static routes in specific setups.
-// The *global* app.use(cors(corsOptions)) should apply to all routes, including static,
-// but for static file-serving robustness, let's keep the global CORS above.
-
-// The crucial piece: Serving your uploaded files.
+// 🟢 Correct: Serves your uploaded files from the /uploads URL endpoint
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-// ================================================
-// !!! END CRITICAL FIXES !!!
-// ================================================
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => { cb(null, path.join(__dirname, 'uploads/')); },
@@ -535,14 +524,8 @@ app.post('/api/menu', adminAuth, upload.single('image'), async (req, res) => {
         return res.status(400).json({ msg: 'Stock must be a non-negative number.' });
     }
 
-    // ================================================
-    // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
-    // This is correctly saving the relative path.
-    // ================================================
+    // 🟢 Correct: Saves the relative path to the image in the DB.
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : '';
-    // ================================================
-    // !!! END VERCEL FIX 2 !!!
-    // ================================================
 
     try {
         const newItem = new MenuItem({
@@ -601,14 +584,8 @@ app.put('/api/menu/:id', adminAuth, upload.single('image'), async (req, res) => 
     };
 
     if (req.file) {
-        // ================================================
-        // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
-        // This is correctly saving the relative path.
-        // ================================================
+        // 🟢 Correct: Updates the relative path in the DB if a new image is uploaded.
         updateData.imageUrl = `/uploads/${req.file.filename}`;
-        // ================================================
-        // !!! END VERCEL FIX 2 !!!
-        // ================================================
     }
     try {
         const updatedItem = await MenuItem.findByIdAndUpdate(id, updateData, { new: true });
@@ -889,14 +866,8 @@ app.post('/api/admin/advertisements', adminAuth, upload.single('image'), async (
         return res.status(400).json({ message: 'Image file is required.' });
     }
     try {
-        // ================================================
-        // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
-        // This is correctly saving the relative path.
-        // ================================================
+        // 🟢 Correct: Saves the relative path to the image in the DB.
         const imageUrl = `/uploads/${req.file.filename}`;
-        // ================================================
-        // !!! END VERCEL FIX 2 !!!
-        // ================================================
 
         const newAd = new Advertisement({ imageUrl, isActive: true });
         await newAd.save();
@@ -942,14 +913,8 @@ app.post('/api/admin/subcategories', [adminAuth, upload.single('image')], async 
         return res.status(400).json({ msg: 'Please provide a non-empty name' });
     }
 
-    // ================================================
-    // ✅ VERCEL DEPLOYMENT FIX 2: Relative Image URL 
-    // This is correctly saving the relative path.
-    // ================================================
+    // 🟢 Correct: Saves the relative path to the image in the DB.
     const imageUrl = `/uploads/${req.file.filename}`;
-    // ================================================
-    // !!! END VERCEL FIX 2 !!!
-    // ================================================
 
     try {
         // Case-insensitive check for existing name
