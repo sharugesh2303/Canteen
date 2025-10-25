@@ -78,7 +78,7 @@ const transporter = nodemailer.createTransport({
 // --- Middleware Setup ---
 
 // ================================================
-// !!! CORS FIX: Updated Admin URL !!!
+// !!! CORS FIX: Removed /login from admin URL !!!
 // ================================================
 const whitelist = [
     'https://chefui.vercel.app',
