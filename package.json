@@ -28,6 +28,7 @@
     "nodemailer": "^7.0.9",
     "qrcode-reader": "^1.0.4",
     "razorpay": "^2.9.6",
+    "socket.io": "^4.8.1",
     "twilio": "^5.10.3"
   },
   "devDependencies": {
