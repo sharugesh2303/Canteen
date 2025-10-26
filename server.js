@@ -766,7 +766,6 @@ app.patch('/api/admin/orders/:id/mark-delivered', adminAuth, async (req, res) =>
         order.deliveredAt = new Date();
         await order.save();
         console.log(`Order ${order.billNumber} marked as Delivered.`);
-        res.json(order);
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
