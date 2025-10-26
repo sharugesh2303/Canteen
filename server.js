@@ -405,7 +405,7 @@ app.post('/api/delivery/login', async (req, res) => {
                 staff: { id: staff.id, username: staff.username }
             });
         });
-    } catch (err) => {
+    } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');
     }
