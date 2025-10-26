@@ -954,7 +954,7 @@ app.post('/api/admin/subcategories', [adminAuth, upload.single('image')], async 
         if (sub) {
             // OPTIONAL: Delete the newly uploaded file since subcategory already exists
             fs.unlinkSync(req.file.path);
-            return res.status(400).json({ msg: 'Subcategory with this name already exists' });
+            return res.status(400).json({ msg: 'Subcategory with this name already exists.' });
         }
         sub = new SubCategory({
             name: name.trim(), // Trim name before saving
