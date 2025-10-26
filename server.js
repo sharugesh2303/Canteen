@@ -10,10 +10,10 @@ const path = require('path');
 const multer = require('multer');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer'); 
-const SibApiV3Sdk = require('@sendinblue/client'); // NEW REQUIREMENT: Brevo API Client
+const nodemailer = require('nodemailer'); // RE-ENABLE NODEMAILER
 const cron = require('node-cron');
 const fs = require('fs');
+// const SibApiV3Sdk = require('@sendinblue/client'); // NO LONGER NEEDED
 
 // 1. Load environment variables from .env file
 require('dotenv').config();
@@ -50,9 +50,10 @@ const mongoURI = process.env.MONGO_URI;
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 const JWT_SECRET = process.env.JWT_SECRET;
-const GMAIL_USER = process.env.GMAIL_USER; // Used as the sender email address
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD; // Keep for Nodemailer, but Brevo is now primary
-const BREVO_API_KEY = process.env.BREVO_API_KEY; // NEW Key for Brevo
+
+// NEW: Brevo SMTP credentials used in .env file
+const BREVO_SMTP_KEY = process.env.BREVO_SMTP_KEY; 
+const BREVO_SMTP_USER = process.env.BREVO_SMTP_USER; // Your Brevo Login (e.g., 9a1678001@smtp-brevo.com)
 
 // Safety check for critical environment variables
 if (!JWT_SECRET) {
@@ -63,8 +64,9 @@ if (!mongoURI) {
     console.error("FATAL ERROR: MONGO_URI is not defined in the .env file.");
     process.exit(1);
 }
-if (!BREVO_API_KEY || !GMAIL_USER) {
-    console.error("FATAL ERROR: BREVO_API_KEY or GMAIL_USER (sender email) is not defined.");
+if (!BREVO_SMTP_KEY || !BREVO_SMTP_USER) {
+    // This check ensures keys are loaded from the environment
+    console.error("FATAL ERROR: BREVO_SMTP_KEY or BREVO_SMTP_USER is missing. Cannot send emails.");
     process.exit(1);
 }
 
@@ -73,8 +75,8 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // --- SOCKET.IO SETUP ---
-const server = http.createServer(app); // Wrap Express app with HTTP server
-const io = new Server(server, { // Attach Socket.io to HTTP server
+const server = http.createServer(app); 
+const io = new Server(server, { 
     cors: {
         origin: ['https://chefui.vercel.app', 'https://jj-canteen-admin.vercel.app', 'http://localhost:5174'], 
         methods: ["GET", "POST", "PATCH"],
@@ -83,10 +85,22 @@ const io = new Server(server, { // Attach Socket.io to HTTP server
 });
 // -----------------------
 
-// --- BREVO API INITIALIZATION (Replaces Nodemailer Transporter) ---
-let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-let apiKey = apiInstance.authentications['apiKey'];
-apiKey.apiKey = BREVO_API_KEY; 
+// --- BREVO VIA NODEMAILER TRANSPORTER SETUP (Uses specific Brevo SMTP details) ---
+const transporter = nodemailer.createTransport({
+    // Hardcoded Brevo SMTP details from the screenshot for reliability
+    host: 'smtp-relay.brevo.com', 
+    port: 587, 
+    secure: false, // Use TLS on port 587
+    auth: {
+        user: BREVO_SMTP_USER, // e.g., 9a1678001@smtp-brevo.com
+        pass: BREVO_SMTP_KEY,  // The key generated in Brevo
+    },
+    // Adding this is often key for cloud environments to ensure TLS works
+    tls: {
+        ciphers: 'SSLv3', 
+        rejectUnauthorized: false
+    }
+});
 // ------------------------------------
 
 // --- Middleware Setup ---
@@ -391,7 +405,7 @@ app.post('/api/delivery/login', async (req, res) => {
                 staff: { id: staff.id, username: staff.username }
             });
         });
-    } catch (err) {
+    } catch (err) => {
         console.error(err.message);
         res.status(500).send('Server Error');
     }
@@ -449,7 +463,7 @@ app.get('/api/orders/bill/:billNumber', deliveryAuth, async (req, res) => { cons
 // --- Student Auth Routes ---
 const otpStore = {};
 
-// REGISTRATION AND OTP SENDING ROUTE (FIXED WITH BREVO API)
+// REGISTRATION AND OTP SENDING ROUTE (FIXED WITH BREVO SMTP)
 app.post('/api/auth/register-email-otp', async (req, res) => { 
     const { name, email } = req.body; 
     try { 
@@ -461,23 +475,24 @@ app.post('/api/auth/register-email-otp', async (req, res) => {
         const otp = Math.floor(100000 + Math.random() * 900000).toString(); 
         otpStore[email] = { otp, name, email, timestamp: Date.now() }; 
         
-        // --- BREVO API SEND LOGIC ---
-        let sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail(); 
+        // --- NODEMAILER SEND LOGIC (using Brevo SMTP) ---
+        const mailOptions = { 
+            // The sender name and email must be verified in Brevo
+            from: `JJ Canteen <${BREVO_SMTP_USER}>`, 
+            to: email, 
+            subject: 'JJ Canteen OTP Verification', 
+            html: `Your one-time password (OTP) is: <strong>${otp}</strong>. It is valid for 10 minutes.` 
+        }; 
         
-        // GMAIL_USER is used as the authenticated sender email
-        sendSmtpEmail.sender = {"name": "JJ Canteen", "email": GMAIL_USER}; 
-        sendSmtpEmail.to = [{"email": email, "name": name}];
-        sendSmtpEmail.subject = 'JJ Canteen OTP Verification';
-        sendSmtpEmail.htmlContent = `Your one-time password (OTP) is: <strong>${otp}</strong>. It is valid for 10 minutes.`;
-
-        // Wait for the secure HTTP API call to complete
-        await apiInstance.sendTransacEmail(sendSmtpEmail);
-        // --- END BREVO API SEND LOGIC ---
+        // Send the email using the Nodemailer/Brevo configuration
+        await transporter.sendMail(mailOptions);
+        // --- END NODEMAILER SEND LOGIC ---
         
-        console.log(`OTP sent to ${email} via Brevo.`); 
+        console.log(`OTP sent to ${email} via Brevo SMTP.`); 
         res.status(200).json({ message: 'OTP sent to your email. Please verify.' }); 
     } catch (err) { 
-        console.error("Error sending OTP email via Brevo:", err.message); 
+        console.error("Error sending OTP email:", err.message); 
+        // Log the full error to help diagnose if authentication fails
         res.status(500).send('Server Error: Failed to send OTP.'); 
     } 
 });
@@ -618,7 +633,6 @@ app.put('/api/menu/:id', adminAuth, upload.single('image'), async (req, res) => 
     if (category === 'Snacks' && !subCategory) {
         return res.status(400).json({ msg: 'Subcategory is required when category is Snacks.' });
     }
-
 
     const stockNumber = parseInt(stock, 10);
     if (isNaN(stockNumber) || stockNumber < 0) {
