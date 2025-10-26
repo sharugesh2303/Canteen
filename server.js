@@ -10,6 +10,7 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
+const fs = require('fs'); // <--- ADDED fs MODULE FOR FILE MANAGEMENT
 
 // 1. Load environment variables from .env file
 require('dotenv').config();
@@ -78,25 +79,21 @@ const transporter = nodemailer.createTransport({
 // --- Middleware Setup ---
 
 // ================================================
-// 🟢 CRITICAL CORRECTION: CORS Whitelist (Origin Fix)
-// The Origin is only the domain, not the path.
+// 🟢 CORS Whitelist (Origin Fix)
 // ================================================
 const whitelist = [
     'https://chefui.vercel.app',
-    'https://jj-canteen-admin.vercel.app',  // ✅ CORRECTED: This is the Vercel Origin domain
+    'https://jj-canteen-admin.vercel.app', 
     'http://localhost:5173',                
     'http://localhost:5174',                
     'http://localhost:5175',                
-    // Add any other deployed frontend URLs here as you make them
 ];
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allow if origin is in whitelist OR if it's not a browser (e.g., Postman)
         if (whitelist.indexOf(origin) !== -1 || !origin) {
             callback(null, true);
         } else {
-            // Log the blocked origin for debugging
             console.warn(`CORS block: Origin not allowed - ${origin}`);
             callback(new Error(`Not allowed by CORS: ${origin}`));
         }
@@ -105,13 +102,13 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 // ================================================
-// !!! END CRITICAL CORRECTION !!!
+// !!! END CORS FIX !!!
 // ================================================
 
 app.use(express.json());
 app.use((req, res, next) => { console.log(`Incoming Request: ${req.method} ${req.url}`); next(); });
 
-// 🟢 Correct: Serves your uploaded files from the /uploads URL endpoint
+// This serves your uploaded files. It's correct.
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const storage = multer.diskStorage({
@@ -524,7 +521,6 @@ app.post('/api/menu', adminAuth, upload.single('image'), async (req, res) => {
         return res.status(400).json({ msg: 'Stock must be a non-negative number.' });
     }
 
-    // 🟢 Correct: Saves the relative path to the image in the DB.
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : '';
 
     try {
@@ -584,7 +580,6 @@ app.put('/api/menu/:id', adminAuth, upload.single('image'), async (req, res) => 
     };
 
     if (req.file) {
-        // 🟢 Correct: Updates the relative path in the DB if a new image is uploaded.
         updateData.imageUrl = `/uploads/${req.file.filename}`;
     }
     try {
@@ -866,7 +861,6 @@ app.post('/api/admin/advertisements', adminAuth, upload.single('image'), async (
         return res.status(400).json({ message: 'Image file is required.' });
     }
     try {
-        // 🟢 Correct: Saves the relative path to the image in the DB.
         const imageUrl = `/uploads/${req.file.filename}`;
 
         const newAd = new Advertisement({ imageUrl, isActive: true });
@@ -913,13 +907,14 @@ app.post('/api/admin/subcategories', [adminAuth, upload.single('image')], async 
         return res.status(400).json({ msg: 'Please provide a non-empty name' });
     }
 
-    // 🟢 Correct: Saves the relative path to the image in the DB.
     const imageUrl = `/uploads/${req.file.filename}`;
 
     try {
         // Case-insensitive check for existing name
         let sub = await SubCategory.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
         if (sub) {
+            // OPTIONAL: Delete the newly uploaded file since subcategory already exists
+            fs.unlinkSync(req.file.path);
             return res.status(400).json({ msg: 'Subcategory with this name already exists' });
         }
         sub = new SubCategory({
@@ -936,6 +931,7 @@ app.post('/api/admin/subcategories', [adminAuth, upload.single('image')], async 
         res.status(500).send('Server Error');
     }
 });
+
 app.get('/api/subcategories', async (req, res) => {
     try {
         const subcategories = await SubCategory.find().sort({ name: 1 });
@@ -947,45 +943,82 @@ app.get('/api/subcategories', async (req, res) => {
 });
 
 // =========================================================
-// !!! NEW SubCategory Edit and Delete Routes !!!
+// 🔴 CRITICAL FIX: Update SubCategory Route to Handle FormData/Image
+// The frontend is sending FormData (name + optional image), so we MUST use multer.
 // =========================================================
 
-// Edit SubCategory Name
+// Edit SubCategory Name AND Image
 // PUT /api/admin/subcategories/:id
-app.put('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
+app.put('/api/admin/subcategories/:id', [adminAuth, upload.single('image')], async (req, res) => {
     const { name } = req.body;
     const { id } = req.params;
 
     if (!name || name.trim() === '') {
+        // OPTIONAL: If a file was uploaded but name is missing, delete the file now
+        if (req.file) { fs.unlinkSync(req.file.path); }
         return res.status(400).json({ msg: 'Please provide a non-empty name' });
     }
     if (!mongoose.Types.ObjectId.isValid(id)) {
+        if (req.file) { fs.unlinkSync(req.file.path); }
         return res.status(400).json({ msg: 'Invalid subcategory ID format.' });
     }
 
     try {
-        // Check if another subcategory already has the new name (case-insensitive), excluding the current one
+        // 1. Check for duplicate name, excluding the current document
         const existingSub = await SubCategory.findOne({
             name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
-            _id: { $ne: id } // Exclude the document being updated
+            _id: { $ne: id } 
         });
         if (existingSub) {
+            if (req.file) { fs.unlinkSync(req.file.path); }
             return res.status(400).json({ msg: 'Another subcategory with this name already exists.' });
         }
 
-        const sub = await SubCategory.findByIdAndUpdate(
-            id,
-            { name: name.trim() }, // Trim name before saving
-            { new: true } // Return the updated document
-        );
+        // 2. Prepare update data
+        const updateData = { name: name.trim() };
+        let oldImagePath = null; 
 
-        if (!sub) {
-            return res.status(404).json({ msg: 'Subcategory not found' });
+        if (req.file) {
+            // New image uploaded, save the new path
+            updateData.imageUrl = `/uploads/${req.file.filename}`;
+            
+            // Get the old document to delete the old image later
+            const oldSub = await SubCategory.findById(id).select('imageUrl');
+            if (oldSub) { oldImagePath = oldSub.imageUrl; }
         }
 
-        res.json(sub);
+        // 3. Perform update
+        const updatedSub = await SubCategory.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true }
+        );
+
+        if (!updatedSub) {
+            // Delete new file if update failed (e.g., 404)
+            if (req.file) { fs.unlinkSync(req.file.path); }
+            return res.status(404).json({ msg: 'Subcategory not found' });
+        }
+        
+        // 4. Delete old image file after successful database update
+        if (oldImagePath && oldImagePath.startsWith('/uploads/')) {
+             try {
+                 const fullPath = path.join(__dirname, oldImagePath);
+                 if (fs.existsSync(fullPath)) {
+                     fs.unlinkSync(fullPath);
+                     console.log(`Successfully deleted old image: ${oldImagePath}`);
+                 }
+             } catch (deleteError) {
+                 console.error(`Warning: Failed to delete old image file ${oldImagePath}:`, deleteError.message);
+                 // We ignore this error as the DB update was successful
+             }
+         }
+
+        res.json(updatedSub);
     } catch (err) {
         console.error(`Error updating subcategory ${id}:`, err.message);
+        // If the request was multipart/form-data and failed here, multer saved the file, so delete it.
+        if (req.file) { fs.unlinkSync(req.file.path); } 
         if (err.name === 'ValidationError') {
             return res.status(400).json({ msg: err.message });
         }
@@ -1004,7 +1037,7 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
 
     try {
         // 1. Check if any MenuItems are using this SubCategory
-        const itemsUsingSub = await MenuItem.find({ subCategory: id }).limit(1); // limit(1) is faster, we just need to know if *any* exist
+        const itemsUsingSub = await MenuItem.find({ subCategory: id }).limit(1); 
 
         if (itemsUsingSub.length > 0) {
             return res.status(400).json({ msg: 'Cannot delete subcategory. Menu items are still assigned to it.' });
@@ -1017,8 +1050,18 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
             return res.status(404).json({ msg: 'Subcategory not found' });
         }
 
-        // Optional: Delete the image file associated with the subcategory from /uploads
-        // (Requires parsing fs module - more complex)
+        // 3. OPTIONAL: Delete the image file associated with the subcategory from /uploads
+        if (sub.imageUrl && sub.imageUrl.startsWith('/uploads/')) {
+            try {
+                const fullPath = path.join(__dirname, sub.imageUrl);
+                if (fs.existsSync(fullPath)) {
+                    fs.unlinkSync(fullPath);
+                    console.log(`Successfully deleted subcategory image: ${sub.imageUrl}`);
+                }
+            } catch (deleteError) {
+                console.error(`Warning: Failed to delete subcategory image file ${sub.imageUrl}:`, deleteError.message);
+            }
+        }
 
         res.json({ msg: 'Subcategory deleted successfully' });
 
