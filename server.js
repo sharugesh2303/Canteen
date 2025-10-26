@@ -84,6 +84,7 @@ const transporter = nodemailer.createTransport({
 const whitelist = [
     'https://chefui.vercel.app',
     'https://jj-canteen-admin.vercel.app', 
+    'https://jjcetcanteen.vercel.app', // 🟢 ADDED FINAL STUDENT FRONTEND URL
     'http://localhost:5173',                
     'http://localhost:5174',                
     'http://localhost:5175',                
@@ -91,6 +92,7 @@ const whitelist = [
 
 const corsOptions = {
     origin: function (origin, callback) {
+        // Allowing origins from the list OR if it's not present (like in postman/some mobile testing)
         if (whitelist.indexOf(origin) !== -1 || !origin) {
             callback(null, true);
         } else {
@@ -701,6 +703,32 @@ app.get('/api/orders/my-history', auth, async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+
+// 🟢 NEW: Student Get Single Order Details Route
+app.get('/api/orders/:id', auth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const studentId = req.student.id;
+
+        // Validate ID format
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ msg: 'Invalid Order ID format.' });
+        }
+
+        // Fetch the order, ensuring it belongs to the authenticated student
+        const order = await Order.findOne({ _id: id, student: studentId });
+
+        if (!order) {
+            return res.status(404).json({ msg: 'Order not found or access denied.' });
+        }
+
+        res.json(order);
+    } catch (err) {
+        console.error(`Error fetching order ${req.params.id} for student ${req.student.id}:`, err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 
 // --- NEW: Order Status Routes (Chef Actions) ---
 
