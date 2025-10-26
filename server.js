@@ -10,7 +10,8 @@ const path = require('path');
 const multer = require('multer');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const nodemailer = require('nodemailer'); 
+const SibApiV3Sdk = require('@sendinblue/client'); // NEW REQUIREMENT: Brevo API Client
 const cron = require('node-cron');
 const fs = require('fs');
 
@@ -49,8 +50,9 @@ const mongoURI = process.env.MONGO_URI;
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 const JWT_SECRET = process.env.JWT_SECRET;
-const GMAIL_USER = process.env.GMAIL_USER;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+const GMAIL_USER = process.env.GMAIL_USER; // Used as the sender email address
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD; // Keep for Nodemailer, but Brevo is now primary
+const BREVO_API_KEY = process.env.BREVO_API_KEY; // NEW Key for Brevo
 
 // Safety check for critical environment variables
 if (!JWT_SECRET) {
@@ -61,6 +63,11 @@ if (!mongoURI) {
     console.error("FATAL ERROR: MONGO_URI is not defined in the .env file.");
     process.exit(1);
 }
+if (!BREVO_API_KEY || !GMAIL_USER) {
+    console.error("FATAL ERROR: BREVO_API_KEY or GMAIL_USER (sender email) is not defined.");
+    process.exit(1);
+}
+
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -69,7 +76,6 @@ const PORT = process.env.PORT || 10000;
 const server = http.createServer(app); // Wrap Express app with HTTP server
 const io = new Server(server, { // Attach Socket.io to HTTP server
     cors: {
-        // Ensure this includes your admin/chef frontend URL
         origin: ['https://chefui.vercel.app', 'https://jj-canteen-admin.vercel.app', 'http://localhost:5174'], 
         methods: ["GET", "POST", "PATCH"],
         credentials: true
@@ -77,21 +83,11 @@ const io = new Server(server, { // Attach Socket.io to HTTP server
 });
 // -----------------------
 
-// --- Nodemailer Transporter Setup (EPROTO FIX APPLIED) ---
-const transporter = nodemailer.createTransport({
-    // Using host/port explicitly is more reliable than 'service: gmail' on cloud hosts
-    host: 'smtp.gmail.com',
-    port: 465, 
-    secure: true, // true for port 465 (implicit TLS)
-    auth: {
-        user: GMAIL_USER,
-        pass: GMAIL_APP_PASSWORD, 
-    },
-    // This setting often resolves EPROTO/SSL negotiation errors on cloud hosting
-    tls: {
-        rejectUnauthorized: false
-    }
-});
+// --- BREVO API INITIALIZATION (Replaces Nodemailer Transporter) ---
+let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+let apiKey = apiInstance.authentications['apiKey'];
+apiKey.apiKey = BREVO_API_KEY; 
+// ------------------------------------
 
 // --- Middleware Setup ---
 
@@ -452,6 +448,8 @@ app.get('/api/orders/bill/:billNumber', deliveryAuth, async (req, res) => { cons
 
 // --- Student Auth Routes ---
 const otpStore = {};
+
+// REGISTRATION AND OTP SENDING ROUTE (FIXED WITH BREVO API)
 app.post('/api/auth/register-email-otp', async (req, res) => { 
     const { name, email } = req.body; 
     try { 
@@ -459,22 +457,27 @@ app.post('/api/auth/register-email-otp', async (req, res) => {
         if (student) { 
             return res.status(400).json({ message: 'A student with this email already exists.' }); 
         } 
+        
         const otp = Math.floor(100000 + Math.random() * 900000).toString(); 
         otpStore[email] = { otp, name, email, timestamp: Date.now() }; 
-        const mailOptions = { 
-            from: GMAIL_USER, 
-            to: email, 
-            subject: 'JJ Canteen OTP Verification', 
-            html: `Your one-time password (OTP) is: <strong>${otp}</strong>. It is valid for 10 minutes.` 
-        }; 
         
-        await transporter.sendMail(mailOptions); // <-- The critical line for email
+        // --- BREVO API SEND LOGIC ---
+        let sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail(); 
         
-        console.log(`OTP sent to ${email}`); 
+        // GMAIL_USER is used as the authenticated sender email
+        sendSmtpEmail.sender = {"name": "JJ Canteen", "email": GMAIL_USER}; 
+        sendSmtpEmail.to = [{"email": email, "name": name}];
+        sendSmtpEmail.subject = 'JJ Canteen OTP Verification';
+        sendSmtpEmail.htmlContent = `Your one-time password (OTP) is: <strong>${otp}</strong>. It is valid for 10 minutes.`;
+
+        // Wait for the secure HTTP API call to complete
+        await apiInstance.sendTransacEmail(sendSmtpEmail);
+        // --- END BREVO API SEND LOGIC ---
+        
+        console.log(`OTP sent to ${email} via Brevo.`); 
         res.status(200).json({ message: 'OTP sent to your email. Please verify.' }); 
     } catch (err) { 
-        // This catch block handles the 500 server error seen in your console
-        console.error("Error sending OTP email:", err.message); 
+        console.error("Error sending OTP email via Brevo:", err.message); 
         res.status(500).send('Server Error: Failed to send OTP.'); 
     } 
 });
@@ -823,7 +826,6 @@ app.patch('/api/admin/orders/:billNumber/mark-ready', adminAuth, async (req, res
             return res.status(404).json({ msg: `Order #${billNumber} not found.` });
         }
 
-        // Allow Paid or Pending (for COD orders just marked paid by admin) to transition to Ready
         if (order.status !== 'Paid' && order.status !== 'Pending') {
             return res.status(400).json({ msg: 'Only PAID or PENDING orders can be marked as ready.' });
         }
@@ -1181,6 +1183,6 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
 });
 
 // Start the server
-server.listen(PORT, '0.0.0.0', () => { // Changed app.listen to server.listen for Socket.io
+server.listen(PORT, '0.0.0.0', () => { 
     console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
