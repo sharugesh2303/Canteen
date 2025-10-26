@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+// ... (all other requires)
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -16,6 +17,7 @@ const fs = require('fs');
 require('dotenv').config();
 
 // --- Import Models & Middleware ---
+// ... (all other imports)
 const Student = require('./models/Student');
 const MenuItem = require('./models/MenuItem');
 const Order = require('./models/Order');
@@ -74,11 +76,12 @@ const transporter = nodemailer.createTransport({
 
 // --- Middleware Setup ---
 
-// CORS Whitelist
+// CORS Whitelist - 🔑 FIX APPLIED: Added the exact student URL and ensured Vercel deployment URLs are included
 const whitelist = [
     'https://chefui.vercel.app',
     'https://jj-canteen-admin.vercel.app', 
     'https://jjcetcanteen.vercel.app', // FINAL STUDENT FRONTEND URL
+    'https://jcetcanteen.vercel.app', // Added specific Vercel URL from your screenshots
     'http://localhost:5173',                
     'http://localhost:5174',                
     'http://localhost:5175',                
@@ -95,7 +98,7 @@ const corsOptions = {
     },
     credentials: true,
 };
-app.use(cors(corsOptions));
+app.use(cors(corsOptions)); // Apply CORS middleware
 
 app.use(express.json());
 app.use((req, res, next) => { console.log(`Incoming Request: ${req.method} ${req.url}`); next(); });
@@ -661,7 +664,7 @@ app.get('/api/orders/my-history', auth, async (req, res) => {
         const studentId = req.student.id;
         const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
 
-        // 🟢 FIX APPLIED: Query updated to show ONLY Paid, Ready, and recent Pending orders.
+        // Query updated to show ONLY Paid, Ready, and recent Pending orders.
         const orders = await Order.find({
             student: studentId,
             $or: [
@@ -678,7 +681,7 @@ app.get('/api/orders/my-history', auth, async (req, res) => {
     }
 });
 
-// 🟢 NEW: Student Get Single Order Details Route
+// Student Get Single Order Details Route
 app.get('/api/orders/:id', auth, async (req, res) => {
     try {
         const { id } = req.params;
@@ -706,7 +709,7 @@ app.get('/api/orders/:id', auth, async (req, res) => {
 
 // --- NEW: Order Status Routes (Chef Actions) ---
 
-// 🔑 FIX APPLIED: Changed parameter from :id to :billNumber and used Order.findOne()
+// Changed parameter from :id to :billNumber and used Order.findOne()
 app.patch('/api/admin/orders/:billNumber/mark-ready', adminAuth, async (req, res) => {
     const { billNumber } = req.params;
     try {
