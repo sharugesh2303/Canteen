@@ -10,7 +10,7 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
-const fs = require('fs'); // <--- ADDED fs MODULE FOR FILE MANAGEMENT
+const fs = require('fs');
 
 // 1. Load environment variables from .env file
 require('dotenv').config();
@@ -28,22 +28,19 @@ const auth = require('./middleware/auth');
 const adminAuth = require('./middleware/adminAuth');
 const deliveryAuth = require('./middleware/deliveryAuth');
 
-// --- NEW: CanteenStatus Model Definition ---
+// --- CanteenStatus Model Definition ---
 const CanteenStatus = mongoose.models.CanteenStatus || mongoose.model('CanteenStatus', new mongoose.Schema({
     key: { type: String, default: 'GLOBAL_STATUS', unique: true },
     isOpen: { type: Boolean, default: true, required: true },
 }));
-// --- End CanteenStatus ---
 
-// --- NEW: GLOBAL SERVICE HOURS STORE ---
+// --- GLOBAL SERVICE HOURS STORE ---
 let serviceHoursStore = {
     breakfastStart: '08:00',
     breakfastEnd: '11:00',
     lunchStart: '12:00',
     lunchEnd: '15:00',
 };
-// --- End Global ---
-
 
 // 2. Read keys securely from process.env
 const mongoURI = process.env.MONGO_URI;
@@ -64,7 +61,6 @@ if (!mongoURI) {
 }
 
 const app = express();
-// Use 10000 as fallback, which is what Render uses
 const PORT = process.env.PORT || 10000;
 
 // --- Nodemailer Transporter Setup ---
@@ -78,13 +74,11 @@ const transporter = nodemailer.createTransport({
 
 // --- Middleware Setup ---
 
-// ================================================
-// 🟢 CORS Whitelist (Origin Fix)
-// ================================================
+// CORS Whitelist
 const whitelist = [
     'https://chefui.vercel.app',
     'https://jj-canteen-admin.vercel.app', 
-    'https://jjcetcanteen.vercel.app', // 🟢 ADDED FINAL STUDENT FRONTEND URL
+    'https://jjcetcanteen.vercel.app', // FINAL STUDENT FRONTEND URL
     'http://localhost:5173',                
     'http://localhost:5174',                
     'http://localhost:5175',                
@@ -92,7 +86,6 @@ const whitelist = [
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Allowing origins from the list OR if it's not present (like in postman/some mobile testing)
         if (whitelist.indexOf(origin) !== -1 || !origin) {
             callback(null, true);
         } else {
@@ -103,14 +96,10 @@ const corsOptions = {
     credentials: true,
 };
 app.use(cors(corsOptions));
-// ================================================
-// !!! END CORS FIX !!!
-// ================================================
 
 app.use(express.json());
 app.use((req, res, next) => { console.log(`Incoming Request: ${req.method} ${req.url}`); next(); });
 
-// This serves your uploaded files. It's correct.
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const storage = multer.diskStorage({
@@ -119,11 +108,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- Database Connection (UPDATED) ---
+// --- Database Connection ---
 mongoose.connect(mongoURI)
     .then(() => {
         console.log('MongoDB Connected...');
-        // NEW: Initialize Canteen Status
         CanteenStatus.findOneAndUpdate(
             { key: 'GLOBAL_STATUS' },
             { $setOnInsert: { isOpen: true } },
@@ -132,7 +120,7 @@ mongoose.connect(mongoURI)
     })
     .catch(err => console.error('--- Mongoose Connection ERROR: ---', err));
 
-// --- Initialize Razorpay (UPDATED with new check) ---
+// --- Razorpay Initialization ---
 if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
     console.error("FATAL ERROR: Razorpay keys are MISSING or empty. Payment will not work.");
     process.exit(1);
@@ -141,12 +129,8 @@ const razorpay = new Razorpay({
     key_id: RAZORPAY_KEY_ID,
     key_secret: RAZORPAY_KEY_SECRET,
 });
-// --- End Razorpay Initialization ---
 
-
-// =========================================================
-// !!! AUTOMATED BILL CLEANUP LOGIC !!!
-// =========================================================
+// --- Automated Cleanup Logic (omitted for brevity) ---
 const cleanupExpiredBills = async () => {
     try {
         const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
@@ -154,27 +138,17 @@ const cleanupExpiredBills = async () => {
             status: 'Pending',
             orderDate: { $lt: thirtyMinutesAgo }
         });
-
-        if (expiredBills.length === 0) {
-            // console.log('No expired pending bills found to clean up.'); // Less verbose logging
-            return;
-        }
-
+        if (expiredBills.length === 0) return;
         const cleanupPromises = expiredBills.map(async (bill) => {
             await Promise.all(bill.items.map(async (item) => {
-                // Check if item._id is valid before attempting update
                 if (item._id) {
-                    await MenuItem.findByIdAndUpdate(item._id, {
-                        $inc: { stock: item.quantity }
-                    });
+                    await MenuItem.findByIdAndUpdate(item._id, { $inc: { stock: item.quantity } });
                 } else {
                     console.warn(`Skipping stock update for item without _id in bill ${bill.billNumber}`);
                 }
             }));
-
             await Order.findByIdAndDelete(bill._id);
         });
-
         await Promise.all(cleanupPromises);
         console.log(`SUCCESS: Cleaned up ${expiredBills.length} expired pending bills and reverted stock.`);
     } catch (err) {
@@ -915,7 +889,7 @@ app.delete('/api/admin/advertisements/:id', adminAuth, async (req, res) => {
         if (!ad) return res.status(404).json({ msg: 'Advertisement not found' });
         res.json({ msg: 'Advertisement removed' });
     } catch (err) {
-        console.error("Error deleting ad:", err.message);
+        console.error("Error toggling ad status:", err.message);
         res.status(500).send('Server Error');
     }
 });
@@ -980,19 +954,12 @@ app.get('/api/subcategories', async (req, res) => {
     }
 });
 
-// =========================================================
-// 🔴 CRITICAL FIX: Update SubCategory Route to Handle FormData/Image
-// The frontend is sending FormData (name + optional image), so we MUST use multer.
-// =========================================================
-
 // Edit SubCategory Name AND Image
-// PUT /api/admin/subcategories/:id
 app.put('/api/admin/subcategories/:id', [adminAuth, upload.single('image')], async (req, res) => {
     const { name } = req.body;
     const { id } = req.params;
 
     if (!name || name.trim() === '') {
-        // OPTIONAL: If a file was uploaded but name is missing, delete the file now
         if (req.file) { fs.unlinkSync(req.file.path); }
         return res.status(400).json({ msg: 'Please provide a non-empty name' });
     }
@@ -1094,10 +1061,10 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
                 const fullPath = path.join(__dirname, sub.imageUrl);
                 if (fs.existsSync(fullPath)) {
                     fs.unlinkSync(fullPath);
-                    console.log(`Successfully deleted subcategory image: ${sub.imageUrl}`);
+                    console.log(`Successfully deleted old image: ${sub.imageUrl}`);
                 }
             } catch (deleteError) {
-                console.error(`Warning: Failed to delete subcategory image file ${sub.imageUrl}:`, deleteError.message);
+                console.error(`Warning: Failed to delete old image file ${sub.imageUrl}:`, deleteError.message);
             }
         }
 
@@ -1109,14 +1076,7 @@ app.delete('/api/admin/subcategories/:id', adminAuth, async (req, res) => {
     }
 });
 
-// =========================================================
-// --- End SubCategory Routes ---
-
-
-// ================================================
-
 // Start the server
-// Bind to 0.0.0.0 to be accessible in container environments like Render
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${PORT}`);
 });
