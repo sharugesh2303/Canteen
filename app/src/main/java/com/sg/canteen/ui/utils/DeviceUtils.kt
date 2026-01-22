@@ -1,4 +1,4 @@
-package com.sg.canteen.utils
+package com.sg.canteen.ui.utils
 
 import android.content.Context
 import android.provider.Settings

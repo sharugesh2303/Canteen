@@ -14,7 +14,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.sg.canteen.network.ApiProvider
 import com.sg.canteen.network.models.OrderResponse
-import com.sg.canteen.utils.DeviceUtils   // ✅ ADD
+import com.sg.canteen.ui.utils.DeviceUtils
+  // ✅ ADD
 import retrofit2.HttpException
 
 @OptIn(ExperimentalMaterial3Api::class)

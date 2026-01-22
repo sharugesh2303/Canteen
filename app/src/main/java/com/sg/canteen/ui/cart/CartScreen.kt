@@ -31,7 +31,7 @@ import com.sg.canteen.network.models.PlaceOrderRequest
 import com.sg.canteen.payment.PaymentManager
 import com.sg.canteen.ui.notification.OrderNotificationWorker
 import com.sg.canteen.ui.order.OrdersState
-import com.sg.canteen.utils.DeviceUtils
+import com.sg.canteen.ui.utils.DeviceUtils
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,7 +96,7 @@ fun CartScreen(
                 )
             }
 
-            Divider()
+            HorizontalDivider()
             Spacer(Modifier.height(8.dp))
 
             Text(
@@ -206,22 +206,36 @@ fun CartItemRow(item: CartItem) {
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
 
-                        Text(
-                            text = "₹${item.price}",
-                            fontSize = 15.sp,
-                            color = if (item.originalPrice != null) Color(0xFF4CAF50) else Color.Unspecified,
-                            fontWeight = FontWeight.Black
-                        )
-
-                        if (item.originalPrice != null && item.originalPrice > item.price) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "₹${item.originalPrice}",
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                textDecoration = TextDecoration.LineThrough
-                            )
+                        val discountedPrice = remember(item.price, item.offerPercent) {
+                            if (item.offerPercent > 0) {
+                                (item.price - (item.price * item.offerPercent / 100f)).toInt()
+                            } else {
+                                item.price
+                            }
                         }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+
+                            // ✅ DISCOUNTED PRICE
+                            Text(
+                                text = "₹$discountedPrice",
+                                fontSize = 15.sp,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            // ✅ ORIGINAL PRICE (STRIKE)
+                            if (item.offerPercent > 0) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = "₹${item.price}",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray,
+                                    textDecoration = TextDecoration.LineThrough
+                                )
+                            }
+                        }
+
                     }
                 }
 

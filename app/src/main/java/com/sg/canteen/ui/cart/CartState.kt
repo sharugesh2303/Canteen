@@ -3,6 +3,7 @@ package com.sg.canteen.ui.cart
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateListOf
+import kotlin.math.roundToInt
 
 object CartState {
 
@@ -12,10 +13,9 @@ object CartState {
     fun addItem(
         id: String,
         name: String,
-        finalPrice: Int,
+        actualPrice: Int,          // ✅ ORIGINAL PRICE ONLY
         imageUrl: String?,
-        originalPrice: Int? = null,
-        offerPercent: Int = 0   // ✅ NEW PARAMETER
+        offerPercent: Int = 0      // ✅ OFFER %
     ) {
         val index = cartItems.indexOfFirst { it.id == id }
 
@@ -27,13 +27,23 @@ object CartState {
                 CartItem(
                     id = id,
                     name = name,
-                    price = finalPrice,
+                    price = actualPrice,           // ✅ store only original price
                     imageUrl = imageUrl,
                     quantity = 1,
-                    originalPrice = originalPrice,
-                    offerPercent = offerPercent   // ✅ SAVE OFFER %
+                    originalPrice = actualPrice,   // ✅ keep original
+                    offerPercent = offerPercent
                 )
             )
+        }
+    }
+
+    /* ================= PRICE CALCULATION ================= */
+
+    private fun discountedPrice(item: CartItem): Int {
+        return if (item.offerPercent > 0) {
+            (item.price - (item.price * item.offerPercent / 100f)).roundToInt()
+        } else {
+            item.price
         }
     }
 
@@ -66,15 +76,15 @@ object CartState {
     }
 
     fun totalPrice(): Int {
-        return cartItems.sumOf { it.price * it.quantity }
+        return cartItems.sumOf { item ->
+            discountedPrice(item) * item.quantity   // ✅ apply discount ONLY ONCE here
+        }
     }
 
     fun totalSavings(): Int {
         return cartItems.sumOf { item ->
-            val original = item.originalPrice ?: item.price
-            if (original > item.price) {
-                (original - item.price) * item.quantity
-            } else 0
+            val discounted = discountedPrice(item)
+            (item.price - discounted) * item.quantity
         }
     }
 

@@ -1,18 +1,35 @@
 package com.sg.canteen.ui.dashboard
 
+// ---------- Compose Foundation ----------
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.ui.text.style.TextDecoration
+
+
+import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+
+// ---------- Material Icons ----------
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
+
+// ---------- Material3 ----------
 import androidx.compose.material3.*
+
+// ---------- Runtime ----------
 import androidx.compose.runtime.*
+
+// ---------- UI ----------
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,27 +37,46 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.foundation.lazy.grid.*
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.res.painterResource
+
+
+
+// ---------- DataStore ----------
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+
+// ---------- Coil ----------
 import coil.compose.rememberAsyncImagePainter
-import com.sg.canteen.network.models.*
+
+// ---------- App specific ----------
+import com.sg.canteen.network.models.AdvertisementDto
+import com.sg.canteen.network.models.MenuItemDto
+import com.sg.canteen.network.models.OfferDto
+
+import com.sg.canteen.network.models.SubCategoryDto
 import com.sg.canteen.ui.cart.CartState
 import com.sg.canteen.ui.utils.FAVORITES_KEY
 import com.sg.canteen.ui.utils.appDataStore
+
+// ---------- Coroutines ----------
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+// ---------- Utils ----------
 import java.util.Calendar
 import kotlin.math.roundToInt
+
+// ---------- Missing Compose Types ----------
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+
+
 
 // -----------------------------
 // DATASTORE KEY
@@ -312,6 +348,15 @@ fun DashboardScreen(
                         .padding(padding)
                         .fillMaxSize()
                 ) {
+                    // ✅ SEARCH BAR
+                    item {
+                        SearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            onClick = { showSearchScreen = true }
+                        )
+                    }
+
 
                     // 🔥 AD BANNER
                     if (ads.isNotEmpty()) {
@@ -352,13 +397,18 @@ fun DashboardScreen(
                             }
                         }
                     }
+                    // ✅ CATEGORY CHIPS
+
+
 
                     // CATEGORY CHIPS
+                    // ✅ CATEGORY CHIPS
                     item {
                         LazyRow(
-                            modifier = Modifier.padding(8.dp),
-                            horizontalArrangement =
-                                Arrangement.spacedBy(8.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(visibleCategories) { cat ->
                                 CategoryChip(
@@ -372,29 +422,35 @@ fun DashboardScreen(
                             }
                         }
                     }
-                    // 🧊 SNACK SUB-CATEGORY GRID
+
+// 🧊 SNACK SUB-CATEGORY GRID
                     if (selectedCategory == "Snacks" && selectedSnackSubId == null) {
                         item {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
+
+                            // ⚠️ IMPORTANT:
+                            // LazyVerticalGrid must NOT be nested scroll without fixed height
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(420.dp)   // ✅ IMPORTANT
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    .height(420.dp)
+                                    .padding(12.dp)
                             ) {
-                                items(snackSubCategories) { sub ->
-                                    SnackSubCategoryCard(
-                                        name = sub.name ?: "Unknown",
-                                        imageUrl = sub.imageUrl,
-                                        onClick = {
-                                            selectedSnackSubId = sub._id
-                                        }
-                                    )
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(2),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(snackSubCategories) { sub ->
+                                        SnackSubCategoryCard(
+                                            name = sub.name ?: "Unknown",
+                                            imageUrl = sub.imageUrl,
+                                            onClick = {
+                                                selectedSnackSubId = sub._id
+                                            }
+                                        )
+                                    }
                                 }
                             }
-
                         }
                     }
 
@@ -410,14 +466,11 @@ fun DashboardScreen(
 
                         MenuItemRow(
                             item = item,
-                            isFavorite =
-                                favorites.contains(item._id),
-                            finalPrice =
-                                offerApplied.finalPrice,
-                            appliedOriginalPrice =
-                                offerApplied.originalPrice,
-                            offerPercent =
-                                offerApplied.offerPercent,
+                            offers = offers,
+                            isFavorite = favorites.contains(item._id),
+                            finalPrice = offerApplied.finalPrice,
+                            appliedOriginalPrice = offerApplied.originalPrice,
+                            offerPercent = offerApplied.offerPercent,
                             onToggleFavorite = {
                                 if (favorites.contains(item._id))
                                     favorites.remove(item._id)
@@ -426,12 +479,15 @@ fun DashboardScreen(
 
                                 scope.launch {
                                     context.appDataStore.edit {
-                                        it[FAVORITES_KEY] =
-                                            favorites.toSet()
+                                        it[FAVORITES_KEY] = favorites.toSet()
                                     }
                                 }
+                            },
+                            onAddClicked = {
+                                   // ✅ THIS LINE
                             }
                         )
+
                     }
                 }
             }
@@ -583,6 +639,8 @@ fun SearchOverlay(
 
                         MenuItemRow(
                             item = item,
+                            offers = offers,
+
                             isFavorite =
                                 favorites.contains(item._id),
                             finalPrice =
@@ -595,7 +653,7 @@ fun SearchOverlay(
                                 onToggleFavorite(item)
                             },
                             onAddClicked = {
-                                onItemAdd(item)
+
                             }
                         )
                     }
@@ -611,8 +669,11 @@ fun SearchOverlay(
 @Composable
 fun MenuItemRow(
     item: MenuItemDto,
+    offers: List<OfferDto>,
+
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+
     onAddClicked: () -> Unit = {},
     finalPrice: Int = item.price.roundToInt(),
     appliedOriginalPrice: Int? = null,
@@ -783,20 +844,34 @@ fun MenuItemRow(
             } else {
                 Button(
                     onClick = {
+
                         onAddClicked()
+
+                        // ✅ SAFELY GET OFFER (NO CRASH)
+                        val matchedOffer = offers.firstOrNull { offer ->
+                            offer.isActive && offer.applicableItemIds().contains(item._id)
+                        }
+
+                        val discountPercent = matchedOffer?.discountPercentage ?: 0
+
+
+
+                        // ✅ ADD TO CART
                         CartState.addItem(
                             id = item._id,
                             name = item.name,
-                            finalPrice = finalPrice,
+                            actualPrice = (item.originalPrice ?: item.price).toInt(),
+
                             imageUrl = item.imageUrl,
-                            originalPrice = appliedOriginalPrice,
-                            offerPercent = offerPercent     // ✅ ADD THIS LINE
+                            offerPercent = discountPercent
                         )
-                    },
-                    shape = RoundedCornerShape(20.dp)
+                    }
+
                 ) {
                     Text("+ Add", fontWeight = FontWeight.Bold)
                 }
+
+
             }
         }
     }
@@ -838,3 +913,110 @@ fun SnackSubCategoryCard(
         }
     }
 }
+@Composable
+fun SearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClick: () -> Unit
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        placeholder = { Text("Search for snacks, drinks...") },
+        leadingIcon = {
+            Icon(Icons.Default.Search, contentDescription = null)
+        },
+        shape = RoundedCornerShape(14.dp),
+        singleLine = true
+    )
+}
+@Composable
+fun SubCategoryCard(
+    title: String,
+    count: Int,
+    imageRes: Int,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(6.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+
+            Image(
+                painter =  painterResource(id = imageRes),
+                contentDescription = title,
+                modifier = Modifier
+                    .height(90.dp)
+                    .fillMaxWidth(),
+                contentScale = ContentScale.Fit
+            )
+
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    text = "$count items",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ArrowForward,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+@Composable
+fun JJCategoryChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .padding(end = 8.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(24.dp),
+        color = if (selected)
+            MaterialTheme.colorScheme.primary
+        else
+            MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = if (selected) 4.dp else 0.dp
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            color = Color.White
+        )
+    }
+}
+
+
+
+
+
