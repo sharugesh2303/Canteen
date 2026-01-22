@@ -1,0 +1,840 @@
+package com.sg.canteen.ui.dashboard
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import coil.compose.rememberAsyncImagePainter
+import com.sg.canteen.network.models.*
+import com.sg.canteen.ui.cart.CartState
+import com.sg.canteen.ui.utils.FAVORITES_KEY
+import com.sg.canteen.ui.utils.appDataStore
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import java.util.Calendar
+import kotlin.math.roundToInt
+
+// -----------------------------
+// DATASTORE KEY
+// -----------------------------
+val SEARCH_HISTORY_KEY = stringSetPreferencesKey("search_history")
+
+// -----------------------------
+// OFFER RESULT MODEL
+// -----------------------------
+data class AppliedOfferResult(
+    val finalPrice: Int,
+    val originalPrice: Int?,
+    val offerPercent: Int,
+    val offerName: String?
+)
+
+// -----------------------------
+// ✅ APPLY OFFER (ONLY ITEM ID BASED)
+// -----------------------------
+private fun applyOfferToItem(
+    item: MenuItemDto,
+    offers: List<OfferDto>
+): AppliedOfferResult {
+
+    if (offers.isEmpty()) {
+        return AppliedOfferResult(
+            finalPrice = item.price.roundToInt(),
+            originalPrice = null,
+            offerPercent = 0,
+            offerName = null
+        )
+    }
+
+    var bestDiscount = 0
+    var bestOfferName: String? = null
+
+    val itemId = item._id.trim()
+
+    for (offer in offers) {
+
+        val offerItemIds = offer.applicableItemIds()
+            .map { it.trim() }
+
+        if (offerItemIds.contains(itemId)) {
+            if (offer.discountPercentage > bestDiscount) {
+                bestDiscount = offer.discountPercentage
+                bestOfferName = offer.name
+            }
+        }
+    }
+
+    if (bestDiscount <= 0) {
+        return AppliedOfferResult(
+            finalPrice = item.price.roundToInt(),
+            originalPrice = null,
+            offerPercent = 0,
+            offerName = null
+        )
+    }
+
+    val actualPrice = item.price.roundToInt()
+    val discounted =
+        (actualPrice - (actualPrice * bestDiscount / 100f)).roundToInt()
+
+    return AppliedOfferResult(
+        finalPrice = discounted,
+        originalPrice = actualPrice,
+        offerPercent = bestDiscount,
+        offerName = bestOfferName
+    )
+}
+
+// -----------------------------
+// WAVY BANNER SHAPE
+// -----------------------------
+class WavyBannerShape(
+    private val waveCount: Int = 12,
+    private val waveHeight: Float = 25f
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val path = Path().apply {
+            val waveWidth = size.width / waveCount
+            moveTo(0f, waveHeight)
+            for (i in 0 until waveCount) {
+                relativeQuadraticBezierTo(
+                    waveWidth / 4f,
+                    -waveHeight,
+                    waveWidth / 2f,
+                    0f
+                )
+                relativeQuadraticBezierTo(
+                    waveWidth / 4f,
+                    waveHeight,
+                    waveWidth / 2f,
+                    0f
+                )
+            }
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}
+
+// -----------------------------
+// DEFAULT CATEGORY
+// -----------------------------
+private fun determineDefaultCategory(): String {
+    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    return when {
+        hour < 12 -> "Breakfast"
+        hour < 16 -> "Lunch"
+        else -> "Snacks"
+    }
+}
+
+// -----------------------------
+// DASHBOARD SCREEN
+// -----------------------------
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun DashboardScreen(
+    modifier: Modifier = Modifier,
+    isDarkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+    onGoToOrders: () -> Unit,
+    onGoToCart: () -> Unit,
+    showAd: Boolean,
+    ads: List<AdvertisementDto>,
+    onAdDismissed: () -> Unit,
+    viewModel: DashboardViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val isLoading by viewModel.isLoading.collectAsState()
+    val menuItems by viewModel.menuItems.collectAsState()
+
+    // ✅ IMPORTANT: Directly observe offers from ViewModel
+    val offers by viewModel.offers.collectAsState()
+
+    var selectedCategory by remember {
+        mutableStateOf("Snacks")
+    }
+
+    var selectedSnackSubId by remember { mutableStateOf<String?>(null) }
+    var showSearchScreen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val searchHistory = remember { mutableStateListOf<String>() }
+    val favorites = remember { mutableStateListOf<String>() }
+
+    // -----------------------------
+    // AUTO CATEGORY UPDATE
+    // -----------------------------
+
+
+    // -----------------------------
+    // LOAD FAVORITES + SEARCH
+    // -----------------------------
+    LaunchedEffect(Unit) {
+        val prefs = context.appDataStore.data.first()
+
+        favorites.clear()
+        favorites.addAll(prefs[FAVORITES_KEY] ?: emptySet())
+
+        searchHistory.clear()
+        searchHistory.addAll(prefs[SEARCH_HISTORY_KEY] ?: emptySet())
+    }
+
+    // -----------------------------
+    // CATEGORIES
+    // -----------------------------
+    val allCategories =
+        listOf("Breakfast", "Lunch", "Snacks", "Stationery", "Essentials", "Favorites")
+
+    val visibleCategories = allCategories.filter { cat ->
+        cat == "Favorites" || menuItems.any { it.category == cat }
+    }
+    // 🧊 SNACK SUB-CATEGORIES
+    val snackSubCategories = remember(menuItems) {
+        menuItems
+            .filter { it.category == "Snacks" && it.subCategory != null }
+            .map { it.subCategory!! }
+            .distinctBy { it._id }
+    }
+
+
+    // -----------------------------
+    // FILTER ITEMS
+    // -----------------------------
+    val filteredItems = remember(
+        selectedCategory,
+        selectedSnackSubId,
+        menuItems,
+        favorites.size
+    ) {
+        menuItems.filter { item ->
+            when (selectedCategory) {
+                "Favorites" ->
+                    favorites.contains(item._id)
+
+                "Snacks" -> {
+                    selectedSnackSubId != null &&
+                            item.category == "Snacks" &&
+                            item.subCategory?._id == selectedSnackSubId
+                }
+
+
+                else ->
+                    item.category == selectedCategory
+            }
+        }
+    }
+
+    // -----------------------------
+    // SEARCH RESULT
+    // -----------------------------
+    val searchResults =
+        if (searchQuery.isNotBlank()) {
+            menuItems.filter {
+                it.name.contains(searchQuery, ignoreCase = true)
+            }
+        } else emptyList()
+
+    // -----------------------------
+    // UI
+    // -----------------------------
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = modifier,
+            topBar = {
+                TopAppBar(
+                    title = { Text("JJ Canteen", fontWeight = FontWeight.Bold) },
+                    actions = {
+                        IconButton(onClick = { showSearchScreen = true }) {
+                            Icon(Icons.Default.Search, null)
+                        }
+                        IconButton(onClick = onToggleTheme) {
+                            Icon(
+                                if (isDarkTheme)
+                                    Icons.Default.LightMode
+                                else
+                                    Icons.Default.DarkMode,
+                                null
+                            )
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+
+            if (isLoading) {
+                Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+
+                LazyColumn(
+                    modifier = Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                ) {
+
+                    // 🔥 AD BANNER
+                    if (ads.isNotEmpty()) {
+                        item {
+                            val pagerState =
+                                rememberPagerState { ads.size }
+
+                            LaunchedEffect(Unit) {
+                                while (true) {
+                                    delay(3000)
+                                    pagerState.animateScrollToPage(
+                                        (pagerState.currentPage + 1) % ads.size
+                                    )
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                                    .padding(8.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+
+                            ) {
+                                HorizontalPager(
+                                    state = pagerState,
+                                    modifier = Modifier.fillMaxSize()
+                                ) { page ->
+                                    Image(
+                                        painter = rememberAsyncImagePainter(
+                                            ads[page].imageUrl
+                                        ),
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.FillBounds
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // CATEGORY CHIPS
+                    item {
+                        LazyRow(
+                            modifier = Modifier.padding(8.dp),
+                            horizontalArrangement =
+                                Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(visibleCategories) { cat ->
+                                CategoryChip(
+                                    name = cat,
+                                    selected = cat == selectedCategory,
+                                    onClick = {
+                                        selectedCategory = cat
+                                        selectedSnackSubId = null
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    // 🧊 SNACK SUB-CATEGORY GRID
+                    if (selectedCategory == "Snacks" && selectedSnackSubId == null) {
+                        item {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(420.dp)   // ✅ IMPORTANT
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(snackSubCategories) { sub ->
+                                    SnackSubCategoryCard(
+                                        name = sub.name ?: "Unknown",
+                                        imageUrl = sub.imageUrl,
+                                        onClick = {
+                                            selectedSnackSubId = sub._id
+                                        }
+                                    )
+                                }
+                            }
+
+                        }
+                    }
+
+
+
+                    // ITEMS LIST
+                    items(filteredItems, key = { it._id }) { item ->
+
+                        val offerApplied =
+                            remember(item._id, offers) {
+                                applyOfferToItem(item, offers)
+                            }
+
+                        MenuItemRow(
+                            item = item,
+                            isFavorite =
+                                favorites.contains(item._id),
+                            finalPrice =
+                                offerApplied.finalPrice,
+                            appliedOriginalPrice =
+                                offerApplied.originalPrice,
+                            offerPercent =
+                                offerApplied.offerPercent,
+                            onToggleFavorite = {
+                                if (favorites.contains(item._id))
+                                    favorites.remove(item._id)
+                                else
+                                    favorites.add(item._id)
+
+                                scope.launch {
+                                    context.appDataStore.edit {
+                                        it[FAVORITES_KEY] =
+                                            favorites.toSet()
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 🔍 SEARCH OVERLAY
+        if (showSearchScreen) {
+            SearchOverlay(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                history = searchHistory,
+                results = searchResults,
+                favorites = favorites,
+                offers = offers,
+                onClose = {
+                    showSearchScreen = false
+                    searchQuery = ""
+                },
+                onToggleFavorite = { item ->
+                    if (favorites.contains(item._id))
+                        favorites.remove(item._id)
+                    else
+                        favorites.add(item._id)
+
+                    scope.launch {
+                        context.appDataStore.edit {
+                            it[FAVORITES_KEY] =
+                                favorites.toSet()
+                        }
+                    }
+                },
+                onHistoryRemove = { h ->
+                    searchHistory.remove(h)
+                    scope.launch {
+                        context.appDataStore.edit {
+                            it[SEARCH_HISTORY_KEY] =
+                                searchHistory.toSet()
+                        }
+                    }
+                },
+                onItemAdd = { item ->
+                    if (!searchHistory.contains(item.name)) {
+                        searchHistory.add(item.name)
+                        if (searchHistory.size > 8)
+                            searchHistory.removeAt(0)
+
+                        scope.launch {
+                            context.appDataStore.edit {
+                                it[SEARCH_HISTORY_KEY] =
+                                    searchHistory.toSet()
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+}
+
+// -----------------------------
+// SEARCH OVERLAY
+// -----------------------------
+@Composable
+fun SearchOverlay(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    history: List<String>,
+    results: List<MenuItemDto>,
+    favorites: List<String>,
+    offers: List<OfferDto>,
+    onClose: () -> Unit,
+    onToggleFavorite: (MenuItemDto) -> Unit,
+    onHistoryRemove: (String) -> Unit,
+    onItemAdd: (MenuItemDto) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.ArrowBack, null)
+                }
+                TextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Search items...") },
+                    singleLine = true,
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onQueryChange("") }
+                            ) {
+                                Icon(Icons.Default.Close, null)
+                            }
+                        }
+                    }
+                )
+            }
+
+            HorizontalDivider()
+
+            LazyColumn {
+                if (query.isBlank()) {
+                    items(history.asReversed()) { h ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onQueryChange(h)
+                                }
+                                .padding(16.dp),
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.History,
+                                null,
+                                tint = Color.Gray
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(h, Modifier.weight(1f))
+                            IconButton(
+                                onClick = { onHistoryRemove(h) }
+                            ) {
+                                Icon(
+                                    Icons.Default.Clear,
+                                    null,
+                                    tint = Color.LightGray
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(results, key = { it._id }) { item ->
+
+                        val offerApplied =
+                            remember(item._id, offers) {
+                                applyOfferToItem(item, offers)
+                            }
+
+                        MenuItemRow(
+                            item = item,
+                            isFavorite =
+                                favorites.contains(item._id),
+                            finalPrice =
+                                offerApplied.finalPrice,
+                            appliedOriginalPrice =
+                                offerApplied.originalPrice,
+                            offerPercent =
+                                offerApplied.offerPercent,
+                            onToggleFavorite = {
+                                onToggleFavorite(item)
+                            },
+                            onAddClicked = {
+                                onItemAdd(item)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -----------------------------
+// MENU ITEM ROW
+// -----------------------------
+@Composable
+fun MenuItemRow(
+    item: MenuItemDto,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onAddClicked: () -> Unit = {},
+    finalPrice: Int = item.price.roundToInt(),
+    appliedOriginalPrice: Int? = null,
+    offerPercent: Int = 0
+) {
+    val isOutOfStock = (item.stock ?: 0) <= 0
+    val hasOffer =
+        offerPercent > 0 &&
+                appliedOriginalPrice != null &&
+                appliedOriginalPrice > finalPrice
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor =
+                if (isOutOfStock)
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                else
+                    MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+
+            // IMAGE + BADGES
+            Box(contentAlignment = Alignment.Center) {
+                Image(
+                    painter = rememberAsyncImagePainter(item.imageUrl),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(85.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                    contentScale = ContentScale.Crop,
+                    colorFilter =
+                        if (isOutOfStock)
+                            ColorFilter.colorMatrix(
+                                ColorMatrix().apply {
+                                    setToSaturation(0f)
+                                }
+                            )
+                        else null
+                )
+
+                // OUT OF STOCK OVERLAY
+                if (isOutOfStock) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Color.Black.copy(alpha = 0.5f)
+                            )
+                            .clip(RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "OUT OF\nSTOCK",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                // OFFER BADGE
+                if (hasOffer && !isOutOfStock) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .size(38.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.LocalOffer,
+                            null,
+                            tint = Color.Red,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Text(
+                            text = "$offerPercent%",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // FAVORITE BUTTON
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(32.dp)
+                        .padding(4.dp)
+                ) {
+                    Icon(
+                        imageVector =
+                            if (isFavorite)
+                                Icons.Default.Favorite
+                            else
+                                Icons.Outlined.FavoriteBorder,
+                        contentDescription = null,
+                        tint =
+                            if (isFavorite)
+                                Color.Red
+                            else if (isOutOfStock)
+                                Color.LightGray
+                            else
+                                Color.Black,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // TEXT AREA
+            Column(Modifier.weight(1f)) {
+                Text(
+                    item.name,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    color =
+                        if (isOutOfStock)
+                            Color.Gray
+                        else
+                            Color.Unspecified
+                )
+
+                if (hasOffer) {
+                    Text(
+                        "₹$appliedOriginalPrice",
+                        style = TextStyle(
+                            textDecoration =
+                                TextDecoration.LineThrough,
+                            color = Color.Gray,
+                            fontSize = 13.sp
+                        )
+                    )
+                }
+
+                Text(
+                    "₹$finalPrice",
+                    fontWeight = FontWeight.Bold,
+                    color =
+                        if (isOutOfStock)
+                            Color.Gray
+                        else
+                            MaterialTheme.colorScheme.primary,
+                    fontSize = 15.sp
+                )
+            }
+
+            // ACTION BUTTON
+            if (isOutOfStock) {
+                Text(
+                    "Unavailable",
+                    color = Color.Red,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Button(
+                    onClick = {
+                        onAddClicked()
+                        CartState.addItem(
+                            id = item._id,
+                            name = item.name,
+                            finalPrice = finalPrice,
+                            imageUrl = item.imageUrl,
+                            originalPrice = appliedOriginalPrice,
+                            offerPercent = offerPercent     // ✅ ADD THIS LINE
+                        )
+                    },
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text("+ Add", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+@Composable
+fun SnackSubCategoryCard(
+    name: String,
+    imageUrl: String?,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(6.dp)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Image(
+                painter = rememberAsyncImagePainter(imageUrl),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+                contentScale = ContentScale.Crop
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = name,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(8.dp)
+            )
+        }
+    }
+}
