@@ -6,14 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.ui.text.style.TextDecoration
-
-
-import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,14 +34,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.res.painterResource
-
-
 
 // ---------- DataStore ----------
 import androidx.datastore.preferences.core.edit
@@ -57,8 +54,6 @@ import coil.compose.rememberAsyncImagePainter
 import com.sg.canteen.network.models.AdvertisementDto
 import com.sg.canteen.network.models.MenuItemDto
 import com.sg.canteen.network.models.OfferDto
-
-import com.sg.canteen.network.models.SubCategoryDto
 import com.sg.canteen.ui.cart.CartState
 import com.sg.canteen.ui.utils.FAVORITES_KEY
 import com.sg.canteen.ui.utils.appDataStore
@@ -71,12 +66,6 @@ import kotlinx.coroutines.launch
 // ---------- Utils ----------
 import java.util.Calendar
 import kotlin.math.roundToInt
-
-// ---------- Missing Compose Types ----------
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
-
-
 
 // -----------------------------
 // DATASTORE KEY
@@ -94,33 +83,34 @@ data class AppliedOfferResult(
 )
 
 // -----------------------------
-// ✅ APPLY OFFER (ONLY ITEM ID BASED)
+// ✅ APPLY OFFER (FIXED - PROPER BASE PRICE)
 // -----------------------------
 private fun applyOfferToItem(
     item: MenuItemDto,
     offers: List<OfferDto>
 ): AppliedOfferResult {
 
+    // ✅ base price should be originalPrice first (MRP)
+    val basePrice = (item.originalPrice ?: item.price).roundToInt()
+
     if (offers.isEmpty()) {
         return AppliedOfferResult(
-            finalPrice = item.price.roundToInt(),
+            finalPrice = basePrice,
             originalPrice = null,
             offerPercent = 0,
             offerName = null
         )
     }
 
+    val itemId = item._id.trim()
+
     var bestDiscount = 0
     var bestOfferName: String? = null
 
-    val itemId = item._id.trim()
+    offers.forEach { offer ->
+        val offerItemIds = offer.applicableItemIds().map { it.trim() }
 
-    for (offer in offers) {
-
-        val offerItemIds = offer.applicableItemIds()
-            .map { it.trim() }
-
-        if (offerItemIds.contains(itemId)) {
+        if (offer.isActive && offerItemIds.contains(itemId)) {
             if (offer.discountPercentage > bestDiscount) {
                 bestDiscount = offer.discountPercentage
                 bestOfferName = offer.name
@@ -130,20 +120,19 @@ private fun applyOfferToItem(
 
     if (bestDiscount <= 0) {
         return AppliedOfferResult(
-            finalPrice = item.price.roundToInt(),
+            finalPrice = basePrice,
             originalPrice = null,
             offerPercent = 0,
             offerName = null
         )
     }
 
-    val actualPrice = item.price.roundToInt()
     val discounted =
-        (actualPrice - (actualPrice * bestDiscount / 100f)).roundToInt()
+        (basePrice - (basePrice * bestDiscount / 100f)).roundToInt()
 
     return AppliedOfferResult(
         finalPrice = discounted,
-        originalPrice = actualPrice,
+        originalPrice = basePrice,
         offerPercent = bestDiscount,
         offerName = bestOfferName
     )
@@ -220,12 +209,10 @@ fun DashboardScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val menuItems by viewModel.menuItems.collectAsState()
 
-    // ✅ IMPORTANT: Directly observe offers from ViewModel
+    // ✅ IMPORTANT: Directly observe offers
     val offers by viewModel.offers.collectAsState()
 
-    var selectedCategory by remember {
-        mutableStateOf("Snacks")
-    }
+    var selectedCategory by remember { mutableStateOf("Snacks") }
 
     var selectedSnackSubId by remember { mutableStateOf<String?>(null) }
     var showSearchScreen by remember { mutableStateOf(false) }
@@ -233,11 +220,6 @@ fun DashboardScreen(
 
     val searchHistory = remember { mutableStateListOf<String>() }
     val favorites = remember { mutableStateListOf<String>() }
-
-    // -----------------------------
-    // AUTO CATEGORY UPDATE
-    // -----------------------------
-
 
     // -----------------------------
     // LOAD FAVORITES + SEARCH
@@ -261,6 +243,7 @@ fun DashboardScreen(
     val visibleCategories = allCategories.filter { cat ->
         cat == "Favorites" || menuItems.any { it.category == cat }
     }
+
     // 🧊 SNACK SUB-CATEGORIES
     val snackSubCategories = remember(menuItems) {
         menuItems
@@ -268,7 +251,6 @@ fun DashboardScreen(
             .map { it.subCategory!! }
             .distinctBy { it._id }
     }
-
 
     // -----------------------------
     // FILTER ITEMS
@@ -281,8 +263,7 @@ fun DashboardScreen(
     ) {
         menuItems.filter { item ->
             when (selectedCategory) {
-                "Favorites" ->
-                    favorites.contains(item._id)
+                "Favorites" -> favorites.contains(item._id)
 
                 "Snacks" -> {
                     selectedSnackSubId != null &&
@@ -290,9 +271,7 @@ fun DashboardScreen(
                             item.subCategory?._id == selectedSnackSubId
                 }
 
-
-                else ->
-                    item.category == selectedCategory
+                else -> item.category == selectedCategory
             }
         }
     }
@@ -348,6 +327,7 @@ fun DashboardScreen(
                         .padding(padding)
                         .fillMaxSize()
                 ) {
+
                     // ✅ SEARCH BAR
                     item {
                         SearchBar(
@@ -357,12 +337,10 @@ fun DashboardScreen(
                         )
                     }
 
-
                     // 🔥 AD BANNER
                     if (ads.isNotEmpty()) {
                         item {
-                            val pagerState =
-                                rememberPagerState { ads.size }
+                            val pagerState = rememberPagerState { ads.size }
 
                             LaunchedEffect(Unit) {
                                 while (true) {
@@ -379,16 +357,13 @@ fun DashboardScreen(
                                     .height(200.dp)
                                     .padding(8.dp)
                                     .clip(RoundedCornerShape(16.dp))
-
                             ) {
                                 HorizontalPager(
                                     state = pagerState,
                                     modifier = Modifier.fillMaxSize()
                                 ) { page ->
                                     Image(
-                                        painter = rememberAsyncImagePainter(
-                                            ads[page].imageUrl
-                                        ),
+                                        painter = rememberAsyncImagePainter(ads[page].imageUrl),
                                         contentDescription = null,
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.FillBounds
@@ -397,11 +372,7 @@ fun DashboardScreen(
                             }
                         }
                     }
-                    // ✅ CATEGORY CHIPS
 
-
-
-                    // CATEGORY CHIPS
                     // ✅ CATEGORY CHIPS
                     item {
                         LazyRow(
@@ -423,12 +394,9 @@ fun DashboardScreen(
                         }
                     }
 
-// 🧊 SNACK SUB-CATEGORY GRID
+                    // 🧊 SNACK SUB-CATEGORY GRID
                     if (selectedCategory == "Snacks" && selectedSnackSubId == null) {
                         item {
-
-                            // ⚠️ IMPORTANT:
-                            // LazyVerticalGrid must NOT be nested scroll without fixed height
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -444,9 +412,7 @@ fun DashboardScreen(
                                         SnackSubCategoryCard(
                                             name = sub.name ?: "Unknown",
                                             imageUrl = sub.imageUrl,
-                                            onClick = {
-                                                selectedSnackSubId = sub._id
-                                            }
+                                            onClick = { selectedSnackSubId = sub._id }
                                         )
                                     }
                                 }
@@ -454,9 +420,7 @@ fun DashboardScreen(
                         }
                     }
 
-
-
-                    // ITEMS LIST
+                    // ✅ ITEMS LIST
                     items(filteredItems, key = { it._id }) { item ->
 
                         val offerApplied =
@@ -483,11 +447,8 @@ fun DashboardScreen(
                                     }
                                 }
                             },
-                            onAddClicked = {
-                                   // ✅ THIS LINE
-                            }
+                            onAddClicked = { }
                         )
-
                     }
                 }
             }
@@ -514,8 +475,7 @@ fun DashboardScreen(
 
                     scope.launch {
                         context.appDataStore.edit {
-                            it[FAVORITES_KEY] =
-                                favorites.toSet()
+                            it[FAVORITES_KEY] = favorites.toSet()
                         }
                     }
                 },
@@ -523,21 +483,18 @@ fun DashboardScreen(
                     searchHistory.remove(h)
                     scope.launch {
                         context.appDataStore.edit {
-                            it[SEARCH_HISTORY_KEY] =
-                                searchHistory.toSet()
+                            it[SEARCH_HISTORY_KEY] = searchHistory.toSet()
                         }
                     }
                 },
                 onItemAdd = { item ->
                     if (!searchHistory.contains(item.name)) {
                         searchHistory.add(item.name)
-                        if (searchHistory.size > 8)
-                            searchHistory.removeAt(0)
+                        if (searchHistory.size > 8) searchHistory.removeAt(0)
 
                         scope.launch {
                             context.appDataStore.edit {
-                                it[SEARCH_HISTORY_KEY] =
-                                    searchHistory.toSet()
+                                it[SEARCH_HISTORY_KEY] = searchHistory.toSet()
                             }
                         }
                     }
@@ -586,9 +543,7 @@ fun SearchOverlay(
                     singleLine = true,
                     trailingIcon = {
                         if (query.isNotEmpty()) {
-                            IconButton(
-                                onClick = { onQueryChange("") }
-                            ) {
+                            IconButton(onClick = { onQueryChange("") }) {
                                 Icon(Icons.Default.Close, null)
                             }
                         }
@@ -604,28 +559,15 @@ fun SearchOverlay(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    onQueryChange(h)
-                                }
+                                .clickable { onQueryChange(h) }
                                 .padding(16.dp),
-                            verticalAlignment =
-                                Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.History,
-                                null,
-                                tint = Color.Gray
-                            )
+                            Icon(Icons.Default.History, null, tint = Color.Gray)
                             Spacer(Modifier.width(12.dp))
                             Text(h, Modifier.weight(1f))
-                            IconButton(
-                                onClick = { onHistoryRemove(h) }
-                            ) {
-                                Icon(
-                                    Icons.Default.Clear,
-                                    null,
-                                    tint = Color.LightGray
-                                )
+                            IconButton(onClick = { onHistoryRemove(h) }) {
+                                Icon(Icons.Default.Clear, null, tint = Color.LightGray)
                             }
                         }
                     }
@@ -640,21 +582,12 @@ fun SearchOverlay(
                         MenuItemRow(
                             item = item,
                             offers = offers,
-
-                            isFavorite =
-                                favorites.contains(item._id),
-                            finalPrice =
-                                offerApplied.finalPrice,
-                            appliedOriginalPrice =
-                                offerApplied.originalPrice,
-                            offerPercent =
-                                offerApplied.offerPercent,
-                            onToggleFavorite = {
-                                onToggleFavorite(item)
-                            },
-                            onAddClicked = {
-
-                            }
+                            isFavorite = favorites.contains(item._id),
+                            finalPrice = offerApplied.finalPrice,
+                            appliedOriginalPrice = offerApplied.originalPrice,
+                            offerPercent = offerApplied.offerPercent,
+                            onToggleFavorite = { onToggleFavorite(item) },
+                            onAddClicked = { onItemAdd(item) }
                         )
                     }
                 }
@@ -670,10 +603,8 @@ fun SearchOverlay(
 fun MenuItemRow(
     item: MenuItemDto,
     offers: List<OfferDto>,
-
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
-
     onAddClicked: () -> Unit = {},
     finalPrice: Int = item.price.roundToInt(),
     appliedOriginalPrice: Int? = null,
@@ -715,9 +646,7 @@ fun MenuItemRow(
                     colorFilter =
                         if (isOutOfStock)
                             ColorFilter.colorMatrix(
-                                ColorMatrix().apply {
-                                    setToSaturation(0f)
-                                }
+                                ColorMatrix().apply { setToSaturation(0f) }
                             )
                         else null
                 )
@@ -727,9 +656,7 @@ fun MenuItemRow(
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            .background(
-                                Color.Black.copy(alpha = 0.5f)
-                            )
+                            .background(Color.Black.copy(alpha = 0.5f))
                             .clip(RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -783,12 +710,9 @@ fun MenuItemRow(
                                 Icons.Outlined.FavoriteBorder,
                         contentDescription = null,
                         tint =
-                            if (isFavorite)
-                                Color.Red
-                            else if (isOutOfStock)
-                                Color.LightGray
-                            else
-                                Color.Black,
+                            if (isFavorite) Color.Red
+                            else if (isOutOfStock) Color.LightGray
+                            else Color.Black,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -802,19 +726,14 @@ fun MenuItemRow(
                     item.name,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
-                    color =
-                        if (isOutOfStock)
-                            Color.Gray
-                        else
-                            Color.Unspecified
+                    color = if (isOutOfStock) Color.Gray else Color.Unspecified
                 )
 
                 if (hasOffer) {
                     Text(
                         "₹$appliedOriginalPrice",
                         style = TextStyle(
-                            textDecoration =
-                                TextDecoration.LineThrough,
+                            textDecoration = TextDecoration.LineThrough,
                             color = Color.Gray,
                             fontSize = 13.sp
                         )
@@ -825,10 +744,8 @@ fun MenuItemRow(
                     "₹$finalPrice",
                     fontWeight = FontWeight.Bold,
                     color =
-                        if (isOutOfStock)
-                            Color.Gray
-                        else
-                            MaterialTheme.colorScheme.primary,
+                        if (isOutOfStock) Color.Gray
+                        else MaterialTheme.colorScheme.primary,
                     fontSize = 15.sp
                 )
             }
@@ -847,35 +764,37 @@ fun MenuItemRow(
 
                         onAddClicked()
 
-                        // ✅ SAFELY GET OFFER (NO CRASH)
+                        // ✅ MATCH OFFER SAFELY
                         val matchedOffer = offers.firstOrNull { offer ->
-                            offer.isActive && offer.applicableItemIds().contains(item._id)
+                            offer.isActive &&
+                                    offer.applicableItemIds()
+                                        .any { it.trim() == item._id.trim() }
                         }
 
                         val discountPercent = matchedOffer?.discountPercentage ?: 0
 
+                        // ✅ BASE PRICE = originalPrice first
+                        val basePrice = (item.originalPrice ?: item.price).toInt()
 
-
-                        // ✅ ADD TO CART
                         CartState.addItem(
                             id = item._id,
                             name = item.name,
-                            actualPrice = (item.originalPrice ?: item.price).toInt(),
-
+                            actualPrice = basePrice,
                             imageUrl = item.imageUrl,
                             offerPercent = discountPercent
                         )
                     }
-
                 ) {
                     Text("+ Add", fontWeight = FontWeight.Bold)
                 }
-
-
             }
         }
     }
 }
+
+// -----------------------------
+// SNACK SUBCATEGORY CARD
+// -----------------------------
 @Composable
 fun SnackSubCategoryCard(
     name: String,
@@ -890,9 +809,7 @@ fun SnackSubCategoryCard(
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(6.dp)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Image(
                 painter = rememberAsyncImagePainter(imageUrl),
                 contentDescription = null,
@@ -913,6 +830,10 @@ fun SnackSubCategoryCard(
         }
     }
 }
+
+// -----------------------------
+// SEARCH BAR
+// -----------------------------
 @Composable
 fun SearchBar(
     query: String,
@@ -933,90 +854,3 @@ fun SearchBar(
         singleLine = true
     )
 }
-@Composable
-fun SubCategoryCard(
-    title: String,
-    count: Int,
-    imageRes: Int,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(6.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-
-            Image(
-                painter =  painterResource(id = imageRes),
-                contentDescription = title,
-                modifier = Modifier
-                    .height(90.dp)
-                    .fillMaxWidth(),
-                contentScale = ContentScale.Fit
-            )
-
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(4.dp))
-
-                Text(
-                    text = "$count items",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ArrowForward,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-@Composable
-fun JJCategoryChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .padding(end = 8.dp)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(24.dp),
-        color = if (selected)
-            MaterialTheme.colorScheme.primary
-        else
-            MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = if (selected) 4.dp else 0.dp
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            color = Color.White
-        )
-    }
-}
-
-
-
-
-

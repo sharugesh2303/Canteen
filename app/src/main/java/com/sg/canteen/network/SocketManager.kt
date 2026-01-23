@@ -7,7 +7,7 @@ import io.socket.client.Socket
 object SocketManager {
 
     private const val TAG = "SocketManager"
-    private const val SOCKET_URL = "http://10.0.2.2:10000"
+    private const val SOCKET_URL = "http://10.150.78.133:10000"
 
     private var socket: Socket? = null
 

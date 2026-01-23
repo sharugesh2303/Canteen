@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+
+    // ✅ REQUIRED FOR FIREBASE
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -90,6 +93,18 @@ dependencies {
 
     /* ---------- RAZORPAY ---------- */
     implementation("com.razorpay:checkout:1.6.38")
+
+
+    /* =========================================================
+       ✅ FIREBASE CLOUD MESSAGING (FCM) - ADDED NOW
+    ========================================================= */
+
+    // ✅ Firebase BOM (controls versions automatically)
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+
+    // ✅ Firebase Messaging dependency
+    implementation("com.google.firebase:firebase-messaging")
+
 
     /* ---------- TESTING ---------- */
     testImplementation(libs.junit)

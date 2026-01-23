@@ -19,7 +19,7 @@ fun BillWebViewScreen(
     onBack: () -> Unit
 ) {
     // 🔥 FIXED: Use the IP address confirmed in your logs
-    val baseUrl = "http://10.224.254.133:10000"
+    val baseUrl = "http://10.150.78.133:10000"
     val billUrl = "$baseUrl/api/orders/bill/$qrNumber"
 
     Scaffold(

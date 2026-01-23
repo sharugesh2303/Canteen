@@ -1,8 +1,16 @@
 package com.sg.canteen.network.models
 
 data class OrderItemDto(
-    val _id: String,
+    val itemId: String? = null,
     val name: String,
-    val price: Double,
-    val quantity: Int
+    val quantity: Int,
+
+    // ✅ Final unit price (after discount)
+    val unitPrice: Double,
+
+    // ✅ Original price (MRP / strike)
+    val originalPrice: Double? = null,
+
+    // ✅ Offer percentage
+    val offerPercent: Int? = 0
 )

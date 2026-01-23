@@ -13,7 +13,7 @@ object CartState {
     fun addItem(
         id: String,
         name: String,
-        actualPrice: Int,          // ✅ ORIGINAL PRICE ONLY
+        actualPrice: Int,          // ✅ ORIGINAL / BASE PRICE ONLY
         imageUrl: String?,
         offerPercent: Int = 0      // ✅ OFFER %
     ) {
@@ -27,24 +27,37 @@ object CartState {
                 CartItem(
                     id = id,
                     name = name,
-                    price = actualPrice,           // ✅ store only original price
+                    price = actualPrice,          // ✅ base/original price
                     imageUrl = imageUrl,
                     quantity = 1,
-                    originalPrice = actualPrice,   // ✅ keep original
                     offerPercent = offerPercent
                 )
             )
         }
     }
 
-    /* ================= PRICE CALCULATION ================= */
+    /* ================= PRICE HELPERS ================= */
 
-    private fun discountedPrice(item: CartItem): Int {
-        return if (item.offerPercent > 0) {
-            (item.price - (item.price * item.offerPercent / 100f)).roundToInt()
+    // ✅ final unit price after discount
+    fun finalUnitPrice(item: CartItem): Int {
+        val base = item.price
+        val offer = item.offerPercent
+        return if (offer > 0) {
+            (base - (base * offer / 100f)).roundToInt()
         } else {
-            item.price
+            base
         }
+    }
+
+    // ✅ subtotal per item
+    fun subTotal(item: CartItem): Int {
+        return finalUnitPrice(item) * item.quantity
+    }
+
+    // ✅ savings per item
+    fun savings(item: CartItem): Int {
+        val savedPerUnit = item.price - finalUnitPrice(item)
+        return savedPerUnit * item.quantity
     }
 
     /* ================= QUANTITY MANAGEMENT ================= */
@@ -77,14 +90,13 @@ object CartState {
 
     fun totalPrice(): Int {
         return cartItems.sumOf { item ->
-            discountedPrice(item) * item.quantity   // ✅ apply discount ONLY ONCE here
+            subTotal(item)   // ✅ discount applied only once here
         }
     }
 
     fun totalSavings(): Int {
         return cartItems.sumOf { item ->
-            val discounted = discountedPrice(item)
-            (item.price - discounted) * item.quantity
+            savings(item)
         }
     }
 
