@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
         Checkout.preload(applicationContext)
 
         setContent {
-            AppRoot()
+            AppRoot()   // ✅ Theme already handled inside AppRoot
         }
     }
 
@@ -77,9 +77,11 @@ fun AppRoot() {
 
     var currentScreen by rememberSaveable { mutableStateOf("dashboard") }
     var selectedQr by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // ✅ Theme toggle state
     var isDarkTheme by rememberSaveable { mutableStateOf(false) }
 
-    /* ✅ AD STATE (SESSION BASED) */
+    /* ✅ AD STATE */
     var hasShownAd by rememberSaveable { mutableStateOf(false) }
     var ads by remember { mutableStateOf<List<AdvertisementDto>>(emptyList()) }
 
@@ -94,6 +96,7 @@ fun AppRoot() {
         }
     }
 
+    // ✅ BLUE MODERN THEME APPLIED HERE
     CanteenTheme(darkTheme = isDarkTheme) {
 
         Scaffold(
@@ -102,9 +105,14 @@ fun AppRoot() {
             floatingActionButton = {
                 if (currentScreen != "bill" && currentScreen != "order_success") {
                     FloatingActionButton(
-                        onClick = { currentScreen = "feedback" }
+                        onClick = { currentScreen = "feedback" },
+                        containerColor = MaterialTheme.colorScheme.primary
                     ) {
-                        Icon(Icons.Default.Feedback, contentDescription = "Feedback")
+                        Icon(
+                            imageVector = Icons.Default.Feedback,
+                            contentDescription = "Feedback",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                 }
             },
@@ -114,7 +122,10 @@ fun AppRoot() {
             /* ================= BOTTOM NAV BAR ================= */
             bottomBar = {
                 if (currentScreen != "order_success" && currentScreen != "bill") {
-                    NavigationBar {
+
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ) {
 
                         val cartCount by CartState.totalItemCount
 

@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+
 
 // ---------- Material Icons ----------
 import androidx.compose.material.icons.Icons
@@ -286,10 +288,11 @@ fun DashboardScreen(
             }
         } else emptyList()
 
-    // -----------------------------
-    // UI
-    // -----------------------------
+    /// -----------------------------
+// UI
+// -----------------------------
     Box(modifier = Modifier.fillMaxSize()) {
+
         Scaffold(
             modifier = modifier,
             topBar = {
@@ -314,22 +317,29 @@ fun DashboardScreen(
         ) { padding ->
 
             if (isLoading) {
+
                 Box(
-                    Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
                 }
+
             } else {
 
-                LazyColumn(
+                // ✅ SINGLE SCROLL CONTAINER (NO CRASH)
+                LazyVerticalGrid(
                     modifier = Modifier
                         .padding(padding)
-                        .fillMaxSize()
+                        .fillMaxSize(),
+                    columns = GridCells.Fixed(2),          // ✅ 2 items per row
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(12.dp)
                 ) {
 
-                    // ✅ SEARCH BAR
-                    item {
+                    // 🔍 SEARCH BAR (FULL WIDTH)
+                    item(span = { GridItemSpan(2) }) {
                         SearchBar(
                             query = searchQuery,
                             onQueryChange = { searchQuery = it },
@@ -337,25 +347,26 @@ fun DashboardScreen(
                         )
                     }
 
-                    // 🔥 AD BANNER
+                    // 🔥 AD BANNER (FULL WIDTH)
                     if (ads.isNotEmpty()) {
-                        item {
+                        item(span = { GridItemSpan(2) }) {
+
                             val pagerState = rememberPagerState { ads.size }
 
-                            LaunchedEffect(Unit) {
-                                while (true) {
-                                    delay(3000)
-                                    pagerState.animateScrollToPage(
+                            LaunchedEffect(pagerState.currentPage) {
+                                delay(3000)
+                                if (ads.isNotEmpty()) {
+                                    val next =
                                         (pagerState.currentPage + 1) % ads.size
-                                    )
+                                    pagerState.animateScrollToPage(next)
                                 }
                             }
 
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(200.dp)
-                                    .padding(8.dp)
+                                    .height(180.dp)
+                                    .padding(vertical = 8.dp)
                                     .clip(RoundedCornerShape(16.dp))
                             ) {
                                 HorizontalPager(
@@ -363,22 +374,22 @@ fun DashboardScreen(
                                     modifier = Modifier.fillMaxSize()
                                 ) { page ->
                                     Image(
-                                        painter = rememberAsyncImagePainter(ads[page].imageUrl),
+                                        painter = rememberAsyncImagePainter(
+                                            ads[page].imageUrl
+                                        ),
                                         contentDescription = null,
                                         modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.FillBounds
+                                        contentScale = ContentScale.Crop
                                     )
                                 }
                             }
                         }
                     }
 
-                    // ✅ CATEGORY CHIPS
-                    item {
+                    // ✅ CATEGORY CHIPS (FULL WIDTH)
+                    item(span = { GridItemSpan(2) }) {
                         LazyRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(visibleCategories) { cat ->
@@ -394,67 +405,63 @@ fun DashboardScreen(
                         }
                     }
 
-                    // 🧊 SNACK SUB-CATEGORY GRID
+                    // 🧊 SNACK SUB CATEGORY GRID
                     if (selectedCategory == "Snacks" && selectedSnackSubId == null) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(420.dp)
-                                    .padding(12.dp)
-                            ) {
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(2),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    items(snackSubCategories) { sub ->
-                                        SnackSubCategoryCard(
-                                            name = sub.name ?: "Unknown",
-                                            imageUrl = sub.imageUrl,
-                                            onClick = { selectedSnackSubId = sub._id }
-                                        )
-                                    }
-                                }
-                            }
+
+                        items(snackSubCategories, key = { it._id }) { sub ->
+                            SnackSubCategoryCard(
+                                name = sub.name ?: "Unknown",
+                                imageUrl = sub.imageUrl,
+                                onClick = { selectedSnackSubId = sub._id }
+                            )
                         }
-                    }
 
-                    // ✅ ITEMS LIST
-                    items(filteredItems, key = { it._id }) { item ->
+                    } else {
 
-                        val offerApplied =
-                            remember(item._id, offers) {
-                                applyOfferToItem(item, offers)
-                            }
+                        // 🧱 MAIN PRODUCT GRID (2 ITEMS PER ROW ✅)
+                        items(filteredItems, key = { it._id }) { item ->
 
-                        MenuItemRow(
-                            item = item,
-                            offers = offers,
-                            isFavorite = favorites.contains(item._id),
-                            finalPrice = offerApplied.finalPrice,
-                            appliedOriginalPrice = offerApplied.originalPrice,
-                            offerPercent = offerApplied.offerPercent,
-                            onToggleFavorite = {
-                                if (favorites.contains(item._id))
-                                    favorites.remove(item._id)
-                                else
-                                    favorites.add(item._id)
-
-                                scope.launch {
-                                    context.appDataStore.edit {
-                                        it[FAVORITES_KEY] = favorites.toSet()
-                                    }
+                            val offerApplied =
+                                remember(item._id, offers) {
+                                    applyOfferToItem(item, offers)
                                 }
-                            },
-                            onAddClicked = { }
-                        )
+
+                            DashboardGridCard(
+                                item = item,
+                                isFavorite = favorites.contains(item._id),
+                                finalPrice = offerApplied.finalPrice,
+                                originalPrice = offerApplied.originalPrice,
+                                offerPercent = offerApplied.offerPercent,
+                                onToggleFavorite = {
+                                    if (favorites.contains(item._id))
+                                        favorites.remove(item._id)
+                                    else
+                                        favorites.add(item._id)
+
+                                    scope.launch {
+                                        context.appDataStore.edit {
+                                            it[FAVORITES_KEY] = favorites.toSet()
+                                        }
+                                    }
+                                },
+                                onAddClicked = {
+                                    CartState.addItem(
+                                        id = item._id,
+                                        name = item.name,
+                                        imageUrl = item.imageUrl ?: "",
+                                        actualPrice = offerApplied.finalPrice
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
             }
         }
+    }
 
-        // 🔍 SEARCH OVERLAY
+
+    // 🔍 SEARCH OVERLAY
         if (showSearchScreen) {
             SearchOverlay(
                 query = searchQuery,
@@ -502,7 +509,7 @@ fun DashboardScreen(
             )
         }
     }
-}
+
 
 // -----------------------------
 // SEARCH OVERLAY
@@ -553,8 +560,12 @@ fun SearchOverlay(
 
             HorizontalDivider()
 
-            LazyColumn {
-                if (query.isBlank()) {
+            // ================= ITEMS VIEW =================
+
+            if (query.isBlank()) {
+
+                // 🔍 SEARCH HISTORY LIST (keep as list)
+                LazyColumn {
                     items(history.asReversed()) { h ->
                         Row(
                             modifier = Modifier
@@ -571,7 +582,17 @@ fun SearchOverlay(
                             }
                         }
                     }
-                } else {
+                }
+
+            } else {
+
+                // 🧱 PRODUCT GRID VIEW (MODERN UI)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(results, key = { it._id }) { item ->
 
                         val offerApplied =
@@ -579,12 +600,11 @@ fun SearchOverlay(
                                 applyOfferToItem(item, offers)
                             }
 
-                        MenuItemRow(
+                        DashboardGridCard(
                             item = item,
-                            offers = offers,
                             isFavorite = favorites.contains(item._id),
                             finalPrice = offerApplied.finalPrice,
-                            appliedOriginalPrice = offerApplied.originalPrice,
+                            originalPrice = offerApplied.originalPrice,
                             offerPercent = offerApplied.offerPercent,
                             onToggleFavorite = { onToggleFavorite(item) },
                             onAddClicked = { onItemAdd(item) }
@@ -592,6 +612,7 @@ fun SearchOverlay(
                     }
                 }
             }
+
         }
     }
 }
@@ -735,7 +756,7 @@ fun MenuItemRow(
                         style = TextStyle(
                             textDecoration = TextDecoration.LineThrough,
                             color = Color.Gray,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                     )
                 }
@@ -853,4 +874,124 @@ fun SearchBar(
         shape = RoundedCornerShape(14.dp),
         singleLine = true
     )
+}
+
+@Composable
+fun DashboardGridCard(
+
+    item: MenuItemDto,
+    isFavorite: Boolean,
+    finalPrice: Int,
+    originalPrice: Int?,
+    offerPercent: Int,
+    onToggleFavorite: () -> Unit,
+    onAddClicked: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(3.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.78f)  // 🔥 fixed compact card height
+
+    ) {
+        Box {
+
+            Column {
+
+                Image(
+                    painter = rememberAsyncImagePainter(item.imageUrl),
+                    contentDescription = item.name,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)   // ✅ fixed height works correctly in grid
+                        .clip(RoundedCornerShape(10.dp)),
+                    contentScale = ContentScale.Fit   // ✅ PNG safe scaling
+                )
+
+
+
+
+                Column(modifier = Modifier.padding(5.dp)) {
+
+                    Text(
+                        text = item.name,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        maxLines = 1
+                    )
+
+
+
+                    Spacer(Modifier.height(4.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+
+                        Text(
+                            text = "₹$finalPrice",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        if (offerPercent > 0 && originalPrice != null) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "₹$originalPrice",
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                textDecoration = TextDecoration.LineThrough
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Button(
+                        onClick = onAddClicked,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(30.dp),
+                        shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("+ Add", fontSize = 11.sp)
+                    }
+
+
+                }
+            }
+
+            IconButton(
+                onClick = onToggleFavorite,
+                modifier = Modifier.align(Alignment.TopEnd)
+            ) {
+                Icon(
+                    imageVector = if (isFavorite)
+                        Icons.Default.Favorite
+                    else
+                        Icons.Default.FavoriteBorder,
+                    contentDescription = null,
+                    tint = if (isFavorite) Color.Red else Color.White
+                )
+            }
+
+            if (offerPercent > 0) {
+                Surface(
+                    color = Color.Red,
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                ) {
+                    Text(
+                        text = "$offerPercent% OFF",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
 }

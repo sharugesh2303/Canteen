@@ -11,7 +11,7 @@ object ApiClient {
     // 🔥 IMPORTANT:
     // Base URL must NOT include /api
     // because ads are served from /advertisements/public
-    private const val BASE_URL = "http://10.150.78.133:10000/"
+    private const val BASE_URL = "http://10.154.130.104:10000/"
 
 
 
