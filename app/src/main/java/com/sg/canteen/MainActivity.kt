@@ -8,7 +8,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.messaging.FirebaseMessaging
 import com.razorpay.Checkout
@@ -42,39 +43,28 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-            if (isGranted) {
-                Log.d("Permission", "✅ Notification permission granted")
-            }
+            if (isGranted) Log.d("Permission", "✅ Notification permission granted")
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // ✅ 1. Official Splash API-ai thodakkathilaeye activate pannuvom.
+        // Ithu themes.xml-la irukkira windowSplashScreenBrandingImage-ai sariyaaga kaattum.
+        installSplashScreen()
+
         super.onCreate(savedInstanceState)
 
-        // 🔌 Connect Socket and Initialize Notifications
         SocketManager.connect(applicationContext)
         NotificationUtils.createChannels(this)
-
-        // 🔐 Handle Android 13+ Notification Permissions
         checkNotificationPermission()
-
-        // 💳 Razorpay Preload
         Checkout.preload(applicationContext)
-
-        // 📲 Register FCM Token
         registerFcmToken()
 
-        setContent {
-            AppRoot()
-        }
+        // Manual "showBranding" layer-ai remove seithu vittom.
+        setContent { AppRoot() }
     }
 
-    /**
-     * ✅ STEP 1 — SHA-256 Hashing function to match backend requirements
-     */
     private fun hashDeviceId(id: String): String {
-        val bytes = MessageDigest
-            .getInstance("SHA-256")
-            .digest(id.toByteArray())
+        val bytes = MessageDigest.getInstance("SHA-256").digest(id.toByteArray())
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
@@ -88,40 +78,19 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
         }
     }
 
-    /**
-     * ✅ STEP 2 — Register token using the Hashed Device ID
-     */
     private fun registerFcmToken() {
         FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-            Log.d("FCM", "Token: $token")
-
-            // Get Raw Android ID
-            val rawId = Settings.Secure.getString(
-                applicationContext.contentResolver,
-                Settings.Secure.ANDROID_ID
-            ) ?: "unknown_device"
-
-            // Hash it to match backend
+            val rawId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+                ?: "unknown_device"
             val deviceId = hashDeviceId(rawId)
-
             lifecycleScope.launch {
                 try {
                     val api = ApiClient.retrofit.create(ApiService::class.java)
-
-                    // Wrap parameters into the DTO object
-                    val request = FcmRegisterRequest(
-                        deviceId = deviceId,
-                        fcmToken = token
-                    )
-
-                    api.registerFcmToken(request)
-                    Log.d("FCM", "✅ Token registered on server with hashed ID")
+                    api.registerFcmToken(FcmRegisterRequest(deviceId, token))
                 } catch (e: Exception) {
                     Log.e("FCM", "❌ Token registration failed: ${e.message}")
                 }
             }
-        }.addOnFailureListener {
-            Log.e("FCM", "❌ Failed to fetch FCM token", it)
         }
     }
 
@@ -134,11 +103,12 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
     }
 }
 
-/* ================= ROOT COMPOSABLE ================= */
+/* ================= ROOT ================= */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoot() {
+    // Starting screen control-ai direct-ah dashboard-ku maatriyullom.
     var currentScreen by rememberSaveable { mutableStateOf("dashboard") }
     var selectedQr by rememberSaveable { mutableStateOf<String?>(null) }
     var isDarkTheme by rememberSaveable { mutableStateOf(false) }
@@ -149,7 +119,6 @@ fun AppRoot() {
         ads = try {
             ApiClient.retrofit.create(ApiService::class.java).getActiveAdvertisements()
         } catch (e: Exception) {
-            Log.e("API", "Failed to fetch ads", e)
             emptyList()
         }
     }
@@ -157,14 +126,14 @@ fun AppRoot() {
     CanteenTheme(darkTheme = isDarkTheme) {
         Scaffold(
             floatingActionButton = {
-                if (currentScreen != "bill" && currentScreen != "order_success") {
+                if (currentScreen !in listOf("bill", "order_success")) {
                     FloatingActionButton(onClick = { currentScreen = "feedback" }) {
-                        Icon(Icons.Default.Feedback, contentDescription = "Feedback")
+                        Icon(Icons.Default.Feedback, contentDescription = null)
                     }
                 }
             },
             bottomBar = {
-                if (currentScreen != "order_success" && currentScreen != "bill") {
+                if (currentScreen !in listOf("order_success", "bill")) {
                     NavigationBar {
                         val cartCount by CartState.totalItemCount
 
@@ -180,9 +149,7 @@ fun AppRoot() {
                             icon = {
                                 BadgedBox(
                                     badge = { if (cartCount > 0) Badge { Text(cartCount.toString()) } }
-                                ) {
-                                    Icon(Icons.Default.ShoppingCart, null)
-                                }
+                                ) { Icon(Icons.Default.ShoppingCart, null) }
                             },
                             label = { Text("Cart") }
                         )
@@ -195,8 +162,8 @@ fun AppRoot() {
                     }
                 }
             }
-        ) { padding ->
-            Surface(modifier = Modifier.padding(padding)) {
+        ) { paddingValues ->
+            Surface(modifier = Modifier.padding(paddingValues)) {
                 when (currentScreen) {
                     "dashboard" -> DashboardScreen(
                         isDarkTheme = isDarkTheme,
@@ -207,31 +174,19 @@ fun AppRoot() {
                         ads = ads,
                         onAdDismissed = { hasShownAd = true }
                     )
-                    "cart" -> CartScreen(
-                        onOrderPlaced = { currentScreen = "order_success" }
-                    )
+                    "cart" -> CartScreen { currentScreen = "order_success" }
                     "order_success" -> OrderSuccessScreen(
                         onGoHome = { currentScreen = "dashboard" },
                         onViewOrders = { currentScreen = "orders" }
                     )
                     "orders" -> OrdersScreen(
                         onBack = { currentScreen = "dashboard" },
-                        onOpenBill = { qr ->
-                            selectedQr = qr
-                            currentScreen = "bill"
-                        }
+                        onOpenBill = { qr -> selectedQr = qr; currentScreen = "bill" }
                     )
-                    "bill" -> {
-                        val qr = selectedQr
-                        if (qr == null) {
-                            currentScreen = "orders"
-                        } else {
-                            BillWebViewScreen(qrNumber = qr, onBack = { currentScreen = "orders" })
-                        }
+                    "bill" -> selectedQr?.let {
+                        BillWebViewScreen(it) { currentScreen = "orders" }
                     }
-                    "feedback" -> FeedbackScreen(
-                        onBack = { currentScreen = "dashboard" }
-                    )
+                    "feedback" -> FeedbackScreen { currentScreen = "dashboard" }
                 }
             }
         }

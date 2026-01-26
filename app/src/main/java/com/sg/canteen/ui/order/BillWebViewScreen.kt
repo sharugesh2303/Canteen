@@ -1,6 +1,8 @@
 package com.sg.canteen.ui.order
 
+import android.annotation.SuppressLint
 import android.view.ViewGroup
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,13 +15,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 
 @OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BillWebViewScreen(
     qrNumber: String,
     onBack: () -> Unit
 ) {
-    // 🔥 FIXED: Use the IP address confirmed in your logs
-    val baseUrl = "http://10.150.78.133:10000"
+    // 🌍 LIVE BACKEND URL (Koyeb)
+    val baseUrl = "https://evil-gypsy-sharugesh-06d0c56b.koyeb.app"
     val billUrl = "$baseUrl/api/orders/bill/$qrNumber"
 
     Scaffold(
@@ -34,28 +37,39 @@ fun BillWebViewScreen(
             )
         }
     ) { padding ->
+
         AndroidView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
+
             factory = { context ->
                 WebView(context).apply {
+
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                    // Ensure links stay inside the app
+
+                    // Keep navigation inside WebView
                     webViewClient = WebViewClient()
 
-                    // Enable JS for the CSS styling in your backend send() block
-                    settings.javaScriptEnabled = true
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        loadWithOverviewMode = true
+                        useWideViewPort = true
+                        builtInZoomControls = true
+                        displayZoomControls = false
 
-                    // Allow mixed content if your backend is HTTP while testing
-                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        // HTTPS so mixed content not required, but safe fallback
+                        mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    }
 
                     loadUrl(billUrl)
                 }
             },
+
             update = { webView ->
                 webView.loadUrl(billUrl)
             }
