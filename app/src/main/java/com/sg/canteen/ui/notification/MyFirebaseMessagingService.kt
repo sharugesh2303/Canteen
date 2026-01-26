@@ -1,60 +1,78 @@
-package com.sg.canteen.notification
+package com.sg.canteen.notifications
 
+import android.provider.Settings
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.sg.canteen.ui.notification.NotificationHelper
+import com.sg.canteen.network.ApiClient
+import com.sg.canteen.network.ApiService
+import com.sg.canteen.network.FcmRegisterRequest
+import com.sg.canteen.ui.notification.NotificationUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.security.MessageDigest
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
-    companion object {
-        private const val TAG = "FCM_SERVICE"
-    }
-
-    /* =========================================================
-        ✅ Called when Firebase issues a new token
-        This happens:
-        - first install
-        - app data cleared
-        - token refreshed
-    ========================================================= */
+    /* 🔄 CALLED WHEN FCM TOKEN IS CREATED OR REFRESHED */
     override fun onNewToken(token: String) {
         super.onNewToken(token)
 
-        Log.d(TAG, "✅ New FCM Token: $token")
+        Log.d("FCM", "🔄 New token generated: $token")
 
-        // ✅ store token locally
-        NotificationHelper.saveFcmToken(applicationContext, token)
+        val rawId = Settings.Secure.getString(
+            applicationContext.contentResolver,
+            Settings.Secure.ANDROID_ID
+        )
 
-        // Later we will send token to backend API
-        // (so backend can push order ready notification)
+        if (rawId.isNullOrEmpty()) {
+            Log.e("FCM", "❌ Android ID is null, cannot register FCM token")
+            return
+        }
+
+        val hashedDeviceId = hashDeviceId(rawId)
+        Log.d("FCM", "📤 Sending refreshed token with deviceId: $hashedDeviceId")
+
+        // Send updated token to backend
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val api = ApiClient.retrofit.create(ApiService::class.java)
+                api.registerFcmToken(FcmRegisterRequest(hashedDeviceId, token))
+                Log.d("FCM", "✅ Refreshed token sent to server")
+            } catch (e: Exception) {
+                Log.e("FCM", "❌ Failed to send refreshed token", e)
+            }
+        }
     }
 
-    /* =========================================================
-        ✅ Called when notification arrives (foreground/background)
-    ========================================================= */
-    override fun onMessageReceived(message: RemoteMessage) {
-        super.onMessageReceived(message)
+    /* 📩 CALLED WHEN PUSH NOTIFICATION ARRIVES */
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        super.onMessageReceived(remoteMessage)
 
-        Log.d(TAG, "📩 FCM Message Received")
+        Log.d("FCM", "📩 Message received: ${remoteMessage.data}")
 
-        // Notification title/body from notification payload
-        val title = message.notification?.title
-            ?: message.data["title"]
-            ?: "JJ Canteen"
+        // Prefer DATA payload (since backend sends data messages)
+        val title = remoteMessage.data["title"]
+            ?: remoteMessage.notification?.title
+            ?: "Order Update"
 
-        val body = message.notification?.body
-            ?: message.data["body"]
-            ?: "You have a new update"
+        val body = remoteMessage.data["body"]
+            ?: remoteMessage.notification?.body
+            ?: "Your order is ready 🎉"
 
-        Log.d(TAG, "📌 title: $title")
-        Log.d(TAG, "📌 body: $body")
-
-        // ✅ show notification locally
-        NotificationHelper.showNotification(
-            context = applicationContext,
-            title = title,
-            body = body
+        NotificationUtils.showNotification(
+            applicationContext,
+            title,
+            body
         )
+    }
+
+    /* 🔐 SHA-256 HASH (MUST MATCH BACKEND HASHING) */
+    private fun hashDeviceId(id: String): String {
+        val bytes = MessageDigest
+            .getInstance("SHA-256")
+            .digest(id.toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 }

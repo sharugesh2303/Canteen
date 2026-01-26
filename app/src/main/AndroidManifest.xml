@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.sg.canteen">
 
     <!-- ================= REQUIRED PERMISSIONS ================= -->
 
-    <!-- Internet access -->
+    <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- 🔔 REQUIRED FOR NOTIFICATIONS (Android 13+) -->
+    <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Needed for FCM background delivery -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
@@ -22,10 +24,25 @@
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
-        <!-- ================= RAZORPAY META DATA ================= -->
+        <!-- ================= RAZORPAY ================= -->
         <meta-data
             android:name="com.razorpay.ApiKey"
             android:value="rzp_test_RWFHMvcRDEJN3E" />
+
+        <!-- ================= FIREBASE DEFAULT NOTIFICATION CHANNEL ================= -->
+        <!-- Required for Android 8+ notifications to show properly -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="canteen_orders_channel" />
+
+        <!-- ================= FCM SERVICE (🔥 REQUIRED) ================= -->
+        <service
+            android:name=".notifications.MyFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- ================= MAIN ACTIVITY ================= -->
         <activity
@@ -41,5 +58,4 @@
         </activity>
 
     </application>
-
 </manifest>
