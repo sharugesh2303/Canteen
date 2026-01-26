@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -53,6 +54,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import coil.compose.rememberAsyncImagePainter
 
 // ---------- App specific ----------
+import com.sg.canteen.R // ✅ Ensure this matches your project's package name
 import com.sg.canteen.network.models.AdvertisementDto
 import com.sg.canteen.network.models.MenuItemDto
 import com.sg.canteen.network.models.OfferDto
@@ -296,22 +298,28 @@ fun DashboardScreen(
         Scaffold(
             modifier = modifier,
             topBar = {
+                // ✅ FIXED LOGO FIT: Used a container that allows the wide logo to scale correctly
                 TopAppBar(
-                    title = { Text("JJ Canteen", fontWeight = FontWeight.Bold) },
-                    actions = {
-                        IconButton(onClick = { showSearchScreen = true }) {
-                            Icon(Icons.Default.Search, null)
-                        }
-                        IconButton(onClick = onToggleTheme) {
-                            Icon(
-                                if (isDarkTheme)
-                                    Icons.Default.LightMode
-                                else
-                                    Icons.Default.DarkMode,
-                                null
+                    modifier = Modifier.height(135.dp), // Increased slightly for the detailed logo
+                    title = {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(end = 1.dp), // Space from edge
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.college_logo),
+                                contentDescription = "College Logo",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(150.dp), // Fixed height to fit bar
+                                contentScale = ContentScale.Fit, // Keeps aspect ratio perfect
+                                alignment = Alignment.CenterStart
                             )
                         }
-                    }
+                    },
+                    actions = {}
                 )
             }
         ) { padding ->
@@ -338,13 +346,29 @@ fun DashboardScreen(
                     contentPadding = PaddingValues(12.dp)
                 ) {
 
-                    // 🔍 SEARCH BAR (FULL WIDTH)
+                    // 🔍 SEARCH BAR (FULL WIDTH) + THEME BUTTON
                     item(span = { GridItemSpan(2) }) {
-                        SearchBar(
-                            query = searchQuery,
-                            onQueryChange = { searchQuery = it },
-                            onClick = { showSearchScreen = true }
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                SearchBar(
+                                    query = searchQuery,
+                                    onQueryChange = { searchQuery = it },
+                                    onClick = { showSearchScreen = true }
+                                )
+                            }
+                            IconButton(onClick = onToggleTheme) {
+                                Icon(
+                                    if (isDarkTheme)
+                                        Icons.Default.LightMode
+                                    else
+                                        Icons.Default.DarkMode,
+                                    contentDescription = "Toggle Theme"
+                                )
+                            }
+                        }
                     }
 
                     // 🔥 AD BANNER (FULL WIDTH)
@@ -462,53 +486,53 @@ fun DashboardScreen(
 
 
     // 🔍 SEARCH OVERLAY
-        if (showSearchScreen) {
-            SearchOverlay(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                history = searchHistory,
-                results = searchResults,
-                favorites = favorites,
-                offers = offers,
-                onClose = {
-                    showSearchScreen = false
-                    searchQuery = ""
-                },
-                onToggleFavorite = { item ->
-                    if (favorites.contains(item._id))
-                        favorites.remove(item._id)
-                    else
-                        favorites.add(item._id)
+    if (showSearchScreen) {
+        SearchOverlay(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            history = searchHistory,
+            results = searchResults,
+            favorites = favorites,
+            offers = offers,
+            onClose = {
+                showSearchScreen = false
+                searchQuery = ""
+            },
+            onToggleFavorite = { item ->
+                if (favorites.contains(item._id))
+                    favorites.remove(item._id)
+                else
+                    favorites.add(item._id)
 
-                    scope.launch {
-                        context.appDataStore.edit {
-                            it[FAVORITES_KEY] = favorites.toSet()
-                        }
+                scope.launch {
+                    context.appDataStore.edit {
+                        it[FAVORITES_KEY] = favorites.toSet()
                     }
-                },
-                onHistoryRemove = { h ->
-                    searchHistory.remove(h)
+                }
+            },
+            onHistoryRemove = { h ->
+                searchHistory.remove(h)
+                scope.launch {
+                    context.appDataStore.edit {
+                        it[SEARCH_HISTORY_KEY] = searchHistory.toSet()
+                    }
+                }
+            },
+            onItemAdd = { item ->
+                if (!searchHistory.contains(item.name)) {
+                    searchHistory.add(item.name)
+                    if (searchHistory.size > 8) searchHistory.removeAt(0)
+
                     scope.launch {
                         context.appDataStore.edit {
                             it[SEARCH_HISTORY_KEY] = searchHistory.toSet()
                         }
                     }
-                },
-                onItemAdd = { item ->
-                    if (!searchHistory.contains(item.name)) {
-                        searchHistory.add(item.name)
-                        if (searchHistory.size > 8) searchHistory.removeAt(0)
-
-                        scope.launch {
-                            context.appDataStore.edit {
-                                it[SEARCH_HISTORY_KEY] = searchHistory.toSet()
-                            }
-                        }
-                    }
                 }
-            )
-        }
+            }
+        )
     }
+}
 
 
 // -----------------------------
@@ -866,13 +890,22 @@ fun SearchBar(
         onValueChange = onQueryChange,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
+            .padding(12.dp)
+            .clickable { onClick() },
         placeholder = { Text("Search for snacks, drinks...") },
         leadingIcon = {
             Icon(Icons.Default.Search, contentDescription = null)
         },
         shape = RoundedCornerShape(14.dp),
-        singleLine = true
+        singleLine = true,
+        enabled = false, // Prevents typing directly to force overlay on click
+        colors = OutlinedTextFieldDefaults.colors(
+            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+            disabledBorderColor = MaterialTheme.colorScheme.outline,
+            disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     )
 }
 
