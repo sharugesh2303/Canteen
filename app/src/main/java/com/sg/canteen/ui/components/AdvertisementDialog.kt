@@ -1,3 +1,7 @@
+/* ======================================================
+ * FILE: com/sg/canteen/ui/components/AdvertisementDialog.kt
+ * ====================================================== */
+
 package com.sg.canteen.ui.components
 
 import androidx.compose.foundation.Image
@@ -24,21 +28,39 @@ import coil.compose.rememberAsyncImagePainter
 import com.sg.canteen.network.models.AdvertisementDto
 import kotlinx.coroutines.delay
 
+/**
+ * A dialog that displays location-specific advertisements.
+ * * @param ads The full list of advertisements fetched from the backend.
+ * @param currentLocation The active shop location ("canteen" or "cafeteria").
+ * @param onDismiss Callback to close the dialog.
+ */
 @Composable
 fun AdvertisementDialog(
     ads: List<AdvertisementDto>,
+    currentLocation: String,
     onDismiss: () -> Unit
 ) {
-    if (ads.isEmpty()) return
+    // 📍 FILTER LOGIC: Strict location matching
+    // This ensures Canteen ads play only in Canteen side and vice versa.
+    val filteredAds = remember(ads, currentLocation) {
+        ads.filter { ad ->
+            ad.location.equals(currentLocation, ignoreCase = true) && ad.isActive
+        }
+    }
 
-    val pagerState = rememberPagerState { ads.size }
+    // If no ads match the current location, do not show the dialog
+    if (filteredAds.isEmpty()) return
 
-    // 🔁 Auto-slide ads
-    LaunchedEffect(Unit) {
+    val pagerState = rememberPagerState { filteredAds.size }
+
+    // 🔁 Auto-slide logic specific to the filtered list
+    LaunchedEffect(filteredAds) {
         while (true) {
-            delay(3000)
-            val next = (pagerState.currentPage + 1) % ads.size
-            pagerState.animateScrollToPage(next)
+            delay(3500)
+            if (filteredAds.size > 1) {
+                val next = (pagerState.currentPage + 1) % filteredAds.size
+                pagerState.animateScrollToPage(next)
+            }
         }
     }
 
@@ -46,20 +68,20 @@ fun AdvertisementDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            /* ===== AD BANNER ===== */
+            /* ===== AD BANNER CONTAINER ===== */
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(220.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .height(240.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.Black)
             ) {
 
                 HorizontalPager(
@@ -67,50 +89,54 @@ fun AdvertisementDialog(
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
                     Image(
-                        painter = rememberAsyncImagePainter(ads[page].imageUrl),
-                        contentDescription = "Advertisement",
+                        painter = rememberAsyncImagePainter(filteredAds[page].imageUrl),
+                        contentDescription = "Promotion for $currentLocation",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.FillBounds
+                        contentScale = ContentScale.Crop
                     )
                 }
 
+                /* ===== CLOSE BUTTON ===== */
                 IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .size(34.dp)
-                        .clip(CircleShape)
+                        .padding(12.dp)
+                        .size(32.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = Color.White
+                        contentDescription = "Dismiss",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            /* ===== WHITE DOT INDICATORS ===== */
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                repeat(ads.size) { index ->
-                    val isSelected = pagerState.currentPage == index
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 4.dp)
-                            .size(if (isSelected) 10.dp else 8.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isSelected)
-                                    Color.White
-                                else
-                                    Color.White.copy(alpha = 0.5f)
-                            )
-                    )
+            /* ===== PAGER DOT INDICATORS ===== */
+            if (filteredAds.size > 1) {
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    repeat(filteredAds.size) { index ->
+                        val isSelected = pagerState.currentPage == index
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(if (isSelected) 8.dp else 6.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) Color.White else Color.White.copy(alpha = 0.4f)
+                                )
+                        )
+                    }
                 }
             }
         }

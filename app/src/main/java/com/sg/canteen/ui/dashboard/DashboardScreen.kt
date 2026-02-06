@@ -12,10 +12,12 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState // ✅ Added PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.runtime.collectAsState
 
 // ---------- Material Icons ----------
 import androidx.compose.material.icons.Icons
@@ -68,7 +70,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // ---------- Utils ----------
-import java.util.Calendar
 import kotlin.math.roundToInt
 
 // -----------------------------
@@ -180,14 +181,7 @@ class WavyBannerShape(
 // -----------------------------
 // DEFAULT CATEGORY
 // -----------------------------
-private fun determineDefaultCategory(): String {
-    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-    return when {
-        hour < 12 -> "Breakfast"
-        hour < 16 -> "Lunch"
-        else -> "Snacks"
-    }
-}
+
 
 // -----------------------------
 // DASHBOARD SCREEN
@@ -203,8 +197,11 @@ fun DashboardScreen(
     showAd: Boolean,
     ads: List<AdvertisementDto>,
     onAdDismissed: () -> Unit,
+    onBack: () -> Unit, // ✅ Add this line
+    onSwitchToCafeteria: () -> Unit, // ✅ Add this line
     viewModel: DashboardViewModel =
         androidx.lifecycle.viewmodel.compose.viewModel()
+
 ) {
 
     val context = LocalContext.current
@@ -212,10 +209,12 @@ fun DashboardScreen(
 
     val isLoading by viewModel.isLoading.collectAsState()
     val menuItems by viewModel.menuItems.collectAsState()
-
-    // ✅ IMPORTANT: Directly observe offers
     val offers by viewModel.offers.collectAsState()
 
+
+    // ✅ IMPORTANT: Directly observe offers
+
+    var showLocationMenu by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("Snacks") }
 
     var selectedSnackSubId by remember { mutableStateOf<String?>(null) }
@@ -228,14 +227,23 @@ fun DashboardScreen(
     // -----------------------------
     // LOAD FAVORITES + SEARCH
     // -----------------------------
+    // -----------------------------
+    // LOAD FAVORITES + REFRESH FOR CANTEEN
+    // -----------------------------
     LaunchedEffect(Unit) {
-        val prefs = context.appDataStore.data.first()
+        // ViewModel-il neenga unified fetch function vechu irukkureenga, athaan crt
+        viewModel.fetchDashboardData("canteen")
 
+        val prefs = context.appDataStore.data.first()
         favorites.clear()
         favorites.addAll(prefs[FAVORITES_KEY] ?: emptySet())
 
         searchHistory.clear()
         searchHistory.addAll(prefs[SEARCH_HISTORY_KEY] ?: emptySet())
+    }
+    // 1. Create the filtered list (Place this above the if check)
+    val canteenAds = remember(ads) {
+        ads.filter { it.location.equals("canteen", ignoreCase = true) && it.isActive }
     }
 
     // -----------------------------
@@ -244,8 +252,11 @@ fun DashboardScreen(
     val allCategories =
         listOf("Breakfast", "Lunch", "Snacks", "Stationery", "Essentials", "Favorites")
 
-    val visibleCategories = allCategories.filter { cat ->
-        cat == "Favorites" || menuItems.any { it.category == cat }
+    // ✅ Dependency list-la 'menuItems' matrum 'isAvailableNow' nichayam irukkanum
+    val visibleCategories = remember(menuItems) {
+        allCategories.filter { cat ->
+            cat == "Favorites" || menuItems.any { it.category.equals(cat, ignoreCase = true) }
+        }
     }
 
     // 🧊 SNACK SUB-CATEGORIES
@@ -259,26 +270,16 @@ fun DashboardScreen(
     // -----------------------------
     // FILTER ITEMS
     // -----------------------------
-    val filteredItems = remember(
-        selectedCategory,
-        selectedSnackSubId,
-        menuItems,
-        favorites.size
-    ) {
+    val filteredItems = remember(selectedCategory, selectedSnackSubId, menuItems, favorites.size) {
         menuItems.filter { item ->
             when (selectedCategory) {
                 "Favorites" -> favorites.contains(item._id)
-
-                "Snacks" -> {
-                    selectedSnackSubId != null &&
-                            item.category == "Snacks" &&
-                            item.subCategory?._id == selectedSnackSubId
-                }
-
-                else -> item.category == selectedCategory
+                "Snacks" -> selectedSnackSubId == null || item.subCategory?._id == selectedSnackSubId
+                else -> item.category.equals(selectedCategory, ignoreCase = true)
             }
         }
     }
+
 
     // -----------------------------
     // SEARCH RESULT
@@ -298,29 +299,74 @@ fun DashboardScreen(
         Scaffold(
             modifier = modifier,
             topBar = {
-                // ✅ FIXED LOGO FIT: Used a container that allows the wide logo to scale correctly
-                TopAppBar(
-                    modifier = Modifier.height(135.dp), // Increased slightly for the detailed logo
-                    title = {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(end = 1.dp), // Space from edge
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.college_logo),
-                                contentDescription = "College Logo",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(150.dp), // Fixed height to fit bar
-                                contentScale = ContentScale.Fit, // Keeps aspect ratio perfect
-                                alignment = Alignment.CenterStart
-                            )
+                Column(modifier = Modifier.background(MaterialTheme.colorScheme.surface)) {
+                    // --- Row 1: Location Switcher & Theme ---
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .statusBarsPadding(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.Red)
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Box {
+                            Row(
+                                modifier = Modifier.clickable { showLocationMenu = true },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "Canteen", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                            }
+
+                            DropdownMenu(
+                                expanded = showLocationMenu,
+                                onDismissRequest = { showLocationMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Canteen") },
+                                    leadingIcon = { Icon(Icons.Default.Storefront, null) },
+                                    onClick = { showLocationMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Cafeteria") },
+                                    leadingIcon = { Icon(Icons.Default.Coffee, null) },
+                                    onClick = {
+                                        showLocationMenu = false
+                                        CartState.clearCart() // ✅ Important: Clear cart before switching
+                                        onSwitchToCafeteria()
+                                    }
+                                )
+                            }
                         }
-                    },
-                    actions = {}
-                )
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        IconButton(onClick = onToggleTheme) {
+                            Icon(if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode, null)
+                        }
+                    }
+
+                    // --- Row 2: Back Button & Logo ---
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            CartState.clearCart()
+                            onBack()
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                        Image(
+                            painter = painterResource(id = R.drawable.college_logo),
+                            contentDescription = "Logo",
+                            modifier = Modifier.fillMaxHeight().padding(end = 16.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
             }
         ) { padding ->
 
@@ -372,17 +418,27 @@ fun DashboardScreen(
                     }
 
                     // 🔥 AD BANNER (FULL WIDTH)
-                    if (ads.isNotEmpty()) {
+
+// 2. Use the filtered list for the UI (Loop logic improved)
+                    if (canteenAds.isNotEmpty()) {
                         item(span = { GridItemSpan(2) }) {
+                            // Infinite scrolling-க்கு மிக அதிகமான பக்கங்கள் இருப்பது போன்ற ஒரு மாயையை (Illusion) உருவாக்குகிறோம்
+                            val virtualCount = Int.MAX_VALUE
+                            val initialPage = virtualCount / 2 - (virtualCount / 2 % canteenAds.size)
 
-                            val pagerState = rememberPagerState { ads.size }
+                            val pagerState = rememberPagerState(
+                                initialPage = initialPage,
+                                pageCount = { virtualCount }
+                            )
 
-                            LaunchedEffect(pagerState.currentPage) {
-                                delay(3000)
-                                if (ads.isNotEmpty()) {
-                                    val next =
-                                        (pagerState.currentPage + 1) % ads.size
-                                    pagerState.animateScrollToPage(next)
+                            // 🔁 Continuous Auto-slide logic (Forward Only)
+                            LaunchedEffect(canteenAds) {
+                                while (true) {
+                                    delay(3000) // 3 வினாடிகள் இடைவெளி
+                                    if (canteenAds.size > 1) {
+                                        // இது எப்போதும் அடுத்த பக்கத்திற்கு (Forward) மட்டுமே நகர்த்தும்
+                                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                    }
                                 }
                             }
 
@@ -395,13 +451,18 @@ fun DashboardScreen(
                             ) {
                                 HorizontalPager(
                                     state = pagerState,
-                                    modifier = Modifier.fillMaxSize()
-                                ) { page ->
+                                    modifier = Modifier.fillMaxSize(),
+                                    // பக்கங்களை முன்கூட்டியே தயார் நிலையில் வைக்க (Smoothness)
+                                    beyondViewportPageCount = 1
+                                ) { virtualPage ->
+                                    // அசல் அட்வர்டைஸ்மெண்ட் இன்டெக்ஸை கணக்கிடுதல்
+                                    val actualPage = virtualPage % canteenAds.size
+
                                     Image(
                                         painter = rememberAsyncImagePainter(
-                                            ads[page].imageUrl
+                                            canteenAds[actualPage].imageUrl
                                         ),
-                                        contentDescription = null,
+                                        contentDescription = "Canteen Promotion",
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
                                     )
@@ -469,11 +530,14 @@ fun DashboardScreen(
                                     }
                                 },
                                 onAddClicked = {
+                                    val basePrice = (item.originalPrice ?: item.price).toInt()
                                     CartState.addItem(
                                         id = item._id,
                                         name = item.name,
-                                        imageUrl = item.imageUrl ?: "",
-                                        actualPrice = offerApplied.finalPrice
+                                        actualPrice = basePrice,
+                                        imageUrl = item.imageUrl,
+                                        offerPercent = offerApplied.offerPercent, // 🔥 FIX: Pass calculated offer
+                                        location = "canteen"
                                     )
                                 }
                             )
@@ -492,8 +556,8 @@ fun DashboardScreen(
             onQueryChange = { searchQuery = it },
             history = searchHistory,
             results = searchResults,
+            offers = offers,   // ✅ ADD THIS LINE
             favorites = favorites,
-            offers = offers,
             onClose = {
                 showSearchScreen = false
                 searchQuery = ""
@@ -519,16 +583,23 @@ fun DashboardScreen(
                 }
             },
             onItemAdd = { item ->
+                // 🔥 FIX: Calculate offer for searched item so Cart sees discounted price
+                val offer = applyOfferToItem(item, offers)
+
                 if (!searchHistory.contains(item.name)) {
                     searchHistory.add(item.name)
                     if (searchHistory.size > 8) searchHistory.removeAt(0)
-
-                    scope.launch {
-                        context.appDataStore.edit {
-                            it[SEARCH_HISTORY_KEY] = searchHistory.toSet()
-                        }
-                    }
+                    scope.launch { context.appDataStore.edit { it[SEARCH_HISTORY_KEY] = searchHistory.toSet() } }
                 }
+
+                CartState.addItem(
+                    id = item._id,
+                    name = item.name,
+                    actualPrice = (item.originalPrice ?: item.price).toInt(),
+                    imageUrl = item.imageUrl,
+                    offerPercent = offer.offerPercent, // 🔥 FIX: Pass calculated offer
+                    location = "canteen"
+                )
             }
         )
     }
@@ -806,19 +877,8 @@ fun MenuItemRow(
             } else {
                 Button(
                     onClick = {
-
                         onAddClicked()
 
-                        // ✅ MATCH OFFER SAFELY
-                        val matchedOffer = offers.firstOrNull { offer ->
-                            offer.isActive &&
-                                    offer.applicableItemIds()
-                                        .any { it.trim() == item._id.trim() }
-                        }
-
-                        val discountPercent = matchedOffer?.discountPercentage ?: 0
-
-                        // ✅ BASE PRICE = originalPrice first
                         val basePrice = (item.originalPrice ?: item.price).toInt()
 
                         CartState.addItem(
@@ -826,7 +886,8 @@ fun MenuItemRow(
                             name = item.name,
                             actualPrice = basePrice,
                             imageUrl = item.imageUrl,
-                            offerPercent = discountPercent
+                            offerPercent = offerPercent, // 🔥 FIX: Use the percentage passed to the row
+                            location = "canteen"
                         )
                     }
                 ) {
@@ -920,13 +981,15 @@ fun DashboardGridCard(
     onToggleFavorite: () -> Unit,
     onAddClicked: () -> Unit
 ) {
+
+    val isOutOfStock = !item.isAvailable || item.stock <= 0
+
     Card(
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(3.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.78f)  // 🔥 fixed compact card height
-
+            .aspectRatio(0.78f)
     ) {
         Box {
 
@@ -937,13 +1000,13 @@ fun DashboardGridCard(
                     contentDescription = item.name,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp)   // ✅ fixed height works correctly in grid
+                        .height(120.dp)
                         .clip(RoundedCornerShape(10.dp)),
-                    contentScale = ContentScale.Fit   // ✅ PNG safe scaling
+                    contentScale = ContentScale.Fit,
+                    colorFilter = if (isOutOfStock)
+                        ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+                    else null
                 )
-
-
-
 
                 Column(modifier = Modifier.padding(5.dp)) {
 
@@ -951,10 +1014,9 @@ fun DashboardGridCard(
                         text = item.name,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 12.sp,
-                        maxLines = 1
+                        maxLines = 1,
+                        color = if (isOutOfStock) Color.Gray else Color.Unspecified
                     )
-
-
 
                     Spacer(Modifier.height(4.dp))
 
@@ -962,7 +1024,7 @@ fun DashboardGridCard(
 
                         Text(
                             text = "₹$finalPrice",
-                            color = MaterialTheme.colorScheme.primary,
+                            color = if (isOutOfStock) Color.Gray else MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
 
@@ -977,20 +1039,47 @@ fun DashboardGridCard(
                         }
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
 
-                    Button(
-                        onClick = onAddClicked,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(30.dp),
-                        shape = RoundedCornerShape(50),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("+ Add", fontSize = 11.sp)
+                    if (isOutOfStock) {
+
+                        Text(
+                            text = "Out of Stock",
+                            color = Color.Red,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(Modifier.height(4.dp))
+
+                        Button(
+                            onClick = {},
+                            enabled = false,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(30.dp),
+                            shape = RoundedCornerShape(50),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.LightGray
+                            ),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Unavailable", fontSize = 11.sp)
+                        }
+
+                    } else {
+
+                        Button(
+                            onClick = onAddClicked,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(30.dp),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("+ Add", fontSize = 11.sp)
+                        }
                     }
-
-
                 }
             }
 
@@ -1008,7 +1097,7 @@ fun DashboardGridCard(
                 )
             }
 
-            if (offerPercent > 0) {
+            if (offerPercent > 0 && !isOutOfStock) {
                 Surface(
                     color = Color.Red,
                     shape = RoundedCornerShape(6.dp),

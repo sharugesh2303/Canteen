@@ -2,9 +2,12 @@ package com.sg.canteen.ui.cart
 
 import android.app.Activity
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
@@ -47,6 +50,8 @@ fun CartScreen(
     val api = remember { ApiClient.retrofit.create(ApiService::class.java) }
 
     val cartItems = CartState.cartItems
+    // Total price and savings calculated based on discounted units in CartState
+    val totalPrice = CartState.totalPrice()
     val totalSavings = CartState.totalSavings()
 
     var showTimeDialog by remember { mutableStateOf(false) }
@@ -55,28 +60,24 @@ fun CartScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("My Cart") }) }
+        topBar = {
+            TopAppBar(title = { Text("My Cart", fontWeight = FontWeight.Bold) })
+        }
     ) { padding ->
 
         if (cartItems.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Your cart is empty 🛒", fontSize = 18.sp)
+                Text("Your cart is empty 🛒", fontSize = 18.sp, color = Color.Gray)
             }
             return@Scaffold
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
         ) {
-
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -86,33 +87,49 @@ fun CartScreen(
                 }
             }
 
-            // ✅ SAVINGS
+            Spacer(Modifier.height(16.dp))
+
+            // 🎉 Total Savings Banner
             if (totalSavings > 0) {
-                Text(
-                    text = "Total Savings: ₹$totalSavings",
-                    color = Color(0xFF4CAF50),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
+                Surface(
+                    color = Color(0xFFE8F5E9),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                ) {
+                    Text(
+                        text = "🎉 Total Savings: ₹$totalSavings",
+                        color = Color(0xFF2E7D32),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
 
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                text = "Total: ₹${CartState.totalPrice()}",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { showTimeDialog = true }
+            // Checkout Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Place Order")
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Total Payable", style = MaterialTheme.typography.titleMedium)
+                        Text("₹$totalPrice", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Button(
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        onClick = { showTimeDialog = true }
+                    ) {
+                        Text("Place Order", fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }
@@ -120,77 +137,75 @@ fun CartScreen(
     if (showTimeDialog) {
         AlertDialog(
             onDismissRequest = { showTimeDialog = false },
-            title = { Text("When will you collect?") },
+            title = { Text("Collection Details") },
             text = {
                 Column {
                     listOf("Now", "15 minutes", "30 minutes").forEach { time ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = selectedTime == time,
-                                onClick = { selectedTime = time }
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { selectedTime = time },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = selectedTime == time, onClick = { selectedTime = time })
                             Text(time)
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showTimeDialog = false
+                Button(onClick = {
+                    showTimeDialog = false
 
-                        PaymentManager.startPayment(
-                            activity = activity,
-                            amount = CartState.totalPrice(),
-                            onSuccess = { paymentId ->
+                    PaymentManager.startPayment(
+                        activity = activity,
+                        amount = totalPrice,
+                        onSuccess = { paymentId ->
+                            scheduleOrderNotification(activity)
 
-                                scheduleOrderNotification(activity)
+                            scope.launch {
+                                // Standardize location string (lowercase)
+                                val orderLocation = CartState.currentCartLocation?.lowercase() ?: "canteen"
 
-                                scope.launch {
+                                val requestItems = cartItems.map { cartItem ->
+                                    // Base unit price (MRP)
+                                    val basePrice = cartItem.price
+                                    val discount = cartItem.offerPercent
 
-                                    // ✅ Build request items (matches backend schema)
-                                    val requestItems = cartItems.map { cartItem ->
-                                        val basePrice = cartItem.price
-                                        val offer = cartItem.offerPercent
+                                    // Final unit price after discount
+                                    val finalUnitPrice = if (discount > 0)
+                                        (basePrice - (basePrice * discount / 100f)).roundToInt()
+                                    else basePrice
 
-                                        val finalUnitPrice =
-                                            if (offer > 0) {
-                                                (basePrice - (basePrice * offer / 100f)).roundToInt()
-                                            } else {
-                                                basePrice
-                                            }
-
-                                        PlaceOrderItemDto(
-                                            itemId = cartItem.id,
-                                            name = cartItem.name,
-                                            quantity = cartItem.quantity,
-                                            unitPrice = finalUnitPrice.toDouble(),     // ✅ discounted
-                                            originalPrice = basePrice.toDouble(),      // ✅ strike price
-                                            offerPercent = offer
-                                        )
-                                    }
-
-                                    val orderResponse = api.placeOrder(
-                                        PlaceOrderRequest(
-                                            items = requestItems,
-                                            totalAmount = CartState.totalPrice().toDouble(),
-                                            collectionTime = selectedTime,
-                                            paymentMethod = "RAZORPAY",
-                                            paymentStatus = "PAID",
-                                            paymentId = paymentId,
-                                            deviceId = deviceId
-                                        )
+                                    PlaceOrderItemDto(
+                                        itemId = cartItem.id,
+                                        name = cartItem.name,
+                                        quantity = cartItem.quantity,
+                                        unitPrice = finalUnitPrice.toDouble(),
+                                        originalPrice = basePrice.toDouble(),
+                                        offerPercent = discount
                                     )
-
-                                    OrdersState.lastOrder = orderResponse
-                                    CartState.clearCart()
-                                    onOrderPlaced()
                                 }
+
+                                val orderResponse = api.placeOrder(
+                                    PlaceOrderRequest(
+                                        items = requestItems,
+                                        totalAmount = totalPrice.toDouble(),
+                                        collectionTime = selectedTime,
+                                        paymentMethod = "RAZORPAY",
+                                        paymentStatus = "PAID",
+                                        paymentId = paymentId,
+                                        deviceId = deviceId,
+                                        location = orderLocation
+                                    )
+                                )
+
+                                OrdersState.setOrder(orderResponse)
+                                CartState.clearCart()
+                                onOrderPlaced()
                             }
-                        )
-                    }
-                ) {
-                    Text("Continue to Pay")
+                        }
+                    )
+                }) {
+                    Text("Pay ₹$totalPrice")
                 }
             }
         )
@@ -199,94 +214,66 @@ fun CartScreen(
 
 @Composable
 fun CartItemRow(item: CartItem) {
-
+    // Row-level logic for discounted price display
     val basePrice = item.price
     val offerPercent = item.offerPercent
+    val discountedPrice = if (offerPercent > 0) {
+        (basePrice - (basePrice * offerPercent / 100f)).roundToInt()
+    } else basePrice
 
-    val finalPrice = remember(basePrice, offerPercent) {
-        if (offerPercent > 0) {
-            (basePrice - (basePrice * offerPercent / 100f)).roundToInt()
-        } else basePrice
-    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = rememberAsyncImagePainter(item.imageUrl ?: ""),
+                contentDescription = item.name,
+                modifier = Modifier.size(70.dp).clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop
+            )
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.width(12.dp))
 
-        Box(modifier = Modifier.fillMaxWidth()) {
-
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                Image(
-                    painter = rememberAsyncImagePainter(item.imageUrl ?: ""),
-                    contentDescription = item.name,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(MaterialTheme.shapes.medium),
-                    contentScale = ContentScale.Crop
-                )
-
-                Spacer(Modifier.width(12.dp))
-
-                Column(Modifier.weight(1f)) {
-
-                    Text(
-                        item.name,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Spacer(Modifier.height(4.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-
-                        Text(
-                            text = "₹$finalPrice",
-                            fontSize = 15.sp,
-                            color = Color(0xFF4CAF50),
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        if (offerPercent > 0) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "₹$basePrice",
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                textDecoration = TextDecoration.LineThrough
-                            )
-                        }
-                    }
-                }
+            Column(Modifier.weight(1f)) {
+                Text(item.name, fontSize = 16.sp, fontWeight = FontWeight.Bold)
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { CartState.decreaseQuantity(item.id) }) {
-                        Icon(Icons.Default.Remove, contentDescription = null)
-                    }
-                    Text(item.quantity.toString(), fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { CartState.increaseQuantity(item.id) }) {
-                        Icon(Icons.Default.Add, contentDescription = null)
+                    // Current Price
+                    Text("₹$discountedPrice", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+
+                    if (offerPercent > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        // Strikethrough for Original Price
+                        Text(
+                            text = "₹$basePrice",
+                            fontSize = 12.sp,
+                            color = Color.Gray,
+                            textDecoration = TextDecoration.LineThrough
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        // Offer Badge
+                        Text(
+                            text = "$offerPercent% OFF",
+                            fontSize = 10.sp,
+                            color = Color.Red,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
 
-            // ✅ OFFER BADGE
-            if (offerPercent > 0) {
-                Surface(
-                    color = Color.Red,
-                    shape = MaterialTheme.shapes.extraSmall,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                ) {
-                    Text(
-                        text = "${offerPercent}% OFF",
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
+            // Quantity Controls
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { CartState.decreaseQuantity(item.id) }) {
+                    Icon(Icons.Default.Remove, null, tint = Color.Red)
+                }
+                Text(item.quantity.toString(), fontWeight = FontWeight.Bold)
+                IconButton(onClick = { CartState.increaseQuantity(item.id) }) {
+                    Icon(Icons.Default.Add, null, tint = Color(0xFF2E7D32))
                 }
             }
         }

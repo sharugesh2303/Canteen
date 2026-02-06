@@ -11,7 +11,7 @@ object ApiClient {
     // 🔥 IMPORTANT:
     // Base URL must NOT include /api
     // because ads are served from /advertisements/public
-    private const val BASE_URL = "https://evil-gypsy-sharugesh-06d0c56b.koyeb.app/"
+    private const val BASE_URL = "http://10.162.152.133:10000/"
 
 
 

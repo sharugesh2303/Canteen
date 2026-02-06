@@ -13,7 +13,7 @@ import java.security.MessageDigest
 object SocketManager {
 
     private const val TAG = "SocketManager"
-    private const val SOCKET_URL = "https://evil-gypsy-sharugesh-06d0c56b.koyeb.app"
+    private const val SOCKET_URL = "http://10.162.152.133:10000"
 
     private var socket: Socket? = null
     private var cachedHashedDeviceId: String? = null
@@ -25,7 +25,7 @@ object SocketManager {
         try {
             val options = IO.Options().apply {
                 // ✅ Force WebSocket (fixes xhr poll error)
-                transports = arrayOf(WebSocket.NAME)
+                transports = arrayOf(WebSocket.NAME, "polling") // ✅ important for cloud
 
                 reconnection = true
                 reconnectionAttempts = Int.MAX_VALUE

@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedbackScreen(
+    currentLocation: String, // 📍 Added: "canteen" or "cafeteria" passed from Dashboard
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -38,7 +39,11 @@ fun FeedbackScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Student Feedback") },
+                title = {
+                    // Dynamically show location in title
+                    val title = if (currentLocation.equals("cafeteria", true)) "Cafeteria Feedback" else "Canteen Feedback"
+                    Text(title)
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -54,6 +59,13 @@ fun FeedbackScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+
+            // Helpful text showing where the feedback is going
+            Text(
+                text = "Submitting feedback for: ${currentLocation.uppercase()}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
 
             OutlinedTextField(
                 value = name,
@@ -122,7 +134,8 @@ fun FeedbackScreen(
                                     branch = branch,
                                     department = department,
                                     year = year,
-                                    feedbackText = feedback
+                                    feedbackText = feedback,
+                                    location = currentLocation // 📍 Added: Send the location to backend
                                 )
                             )
 

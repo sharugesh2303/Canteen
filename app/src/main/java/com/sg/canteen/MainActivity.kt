@@ -21,20 +21,17 @@ import androidx.lifecycle.lifecycleScope
 import com.google.firebase.messaging.FirebaseMessaging
 import com.razorpay.Checkout
 import com.razorpay.PaymentResultListener
-import com.sg.canteen.network.ApiClient
-import com.sg.canteen.network.ApiService
-import com.sg.canteen.network.FcmRegisterRequest
-import com.sg.canteen.network.SocketManager
+import com.sg.canteen.network.*
 import com.sg.canteen.network.models.AdvertisementDto
 import com.sg.canteen.payment.PaymentManager
 import com.sg.canteen.ui.cart.CartScreen
 import com.sg.canteen.ui.cart.CartState
+import com.sg.canteen.ui.dashboard.CafeteriaDashboardScreen
 import com.sg.canteen.ui.dashboard.DashboardScreen
 import com.sg.canteen.ui.feedback.FeedbackScreen
 import com.sg.canteen.ui.notification.NotificationUtils
-import com.sg.canteen.ui.order.BillWebViewScreen
-import com.sg.canteen.ui.order.OrderSuccessScreen
-import com.sg.canteen.ui.order.OrdersScreen
+import com.sg.canteen.ui.order.*
+import com.sg.canteen.ui.selection.SelectionScreen
 import com.sg.canteen.ui.theme.CanteenTheme
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
@@ -47,10 +44,7 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // ✅ 1. Official Splash API-ai thodakkathilaeye activate pannuvom.
-        // Ithu themes.xml-la irukkira windowSplashScreenBrandingImage-ai sariyaaga kaattum.
         installSplashScreen()
-
         super.onCreate(savedInstanceState)
 
         SocketManager.connect(applicationContext)
@@ -59,7 +53,6 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
         Checkout.preload(applicationContext)
         registerFcmToken()
 
-        // Manual "showBranding" layer-ai remove seithu vittom.
         setContent { AppRoot() }
     }
 
@@ -103,13 +96,16 @@ class MainActivity : ComponentActivity(), PaymentResultListener {
     }
 }
 
-/* ================= ROOT ================= */
+/* ================= ROOT NAVIGATION ================= */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoot() {
-    // Starting screen control-ai direct-ah dashboard-ku maatriyullom.
-    var currentScreen by rememberSaveable { mutableStateOf("dashboard") }
+    var currentScreen by rememberSaveable { mutableStateOf("selection") }
+
+    // 🔥 Track the specific dashboard type to return to from NavigationBar
+    var lastActiveDashboard by rememberSaveable { mutableStateOf("dashboard") }
+
     var selectedQr by rememberSaveable { mutableStateOf<String?>(null) }
     var isDarkTheme by rememberSaveable { mutableStateOf(false) }
     var hasShownAd by rememberSaveable { mutableStateOf(false) }
@@ -126,23 +122,26 @@ fun AppRoot() {
     CanteenTheme(darkTheme = isDarkTheme) {
         Scaffold(
             floatingActionButton = {
-                if (currentScreen !in listOf("bill", "order_success")) {
+                // Only show FAB on the two main Dashboards
+                if (currentScreen in listOf("dashboard", "cafeteria_dashboard")) {
                     FloatingActionButton(onClick = { currentScreen = "feedback" }) {
-                        Icon(Icons.Default.Feedback, contentDescription = null)
+                        Icon(Icons.Default.Feedback, contentDescription = "Feedback")
                     }
                 }
             },
             bottomBar = {
-                if (currentScreen !in listOf("order_success", "bill")) {
+                // Hide bottom bar on entry/success/feedback screens
+                if (currentScreen !in listOf("selection", "order_success", "bill", "feedback")) {
                     NavigationBar {
                         val cartCount by CartState.totalItemCount
 
                         NavigationBarItem(
-                            selected = currentScreen == "dashboard",
-                            onClick = { currentScreen = "dashboard" },
+                            selected = currentScreen == "dashboard" || currentScreen == "cafeteria_dashboard",
+                            onClick = { currentScreen = lastActiveDashboard },
                             icon = { Icon(Icons.Default.Home, null) },
                             label = { Text("Home") }
                         )
+
                         NavigationBarItem(
                             selected = currentScreen == "cart",
                             onClick = { currentScreen = "cart" },
@@ -153,6 +152,7 @@ fun AppRoot() {
                             },
                             label = { Text("Cart") }
                         )
+
                         NavigationBarItem(
                             selected = currentScreen == "orders",
                             onClick = { currentScreen = "orders" },
@@ -165,6 +165,17 @@ fun AppRoot() {
         ) { paddingValues ->
             Surface(modifier = Modifier.padding(paddingValues)) {
                 when (currentScreen) {
+                    "selection" -> SelectionScreen(
+                        onCanteenSelected = {
+                            lastActiveDashboard = "dashboard"
+                            currentScreen = "dashboard"
+                        },
+                        onCafeteriaSelected = {
+                            lastActiveDashboard = "cafeteria_dashboard"
+                            currentScreen = "cafeteria_dashboard"
+                        }
+                    )
+
                     "dashboard" -> DashboardScreen(
                         isDarkTheme = isDarkTheme,
                         onToggleTheme = { isDarkTheme = !isDarkTheme },
@@ -172,21 +183,54 @@ fun AppRoot() {
                         onGoToCart = { currentScreen = "cart" },
                         showAd = !hasShownAd,
                         ads = ads,
-                        onAdDismissed = { hasShownAd = true }
+                        onAdDismissed = { hasShownAd = true },
+                        onBack = { currentScreen = "selection" },
+                        // ✅ Switch directly to Cafeteria dashboard via TopBar dropdown
+                        onSwitchToCafeteria = {
+                            lastActiveDashboard = "cafeteria_dashboard"
+                            currentScreen = "cafeteria_dashboard"
+                        }
                     )
+
+                    "cafeteria_dashboard" -> CafeteriaDashboardScreen(
+                        isDarkTheme = isDarkTheme,
+                        onToggleTheme = { isDarkTheme = !isDarkTheme },
+                        onGoToOrders = { currentScreen = "orders" },
+                        onGoToCart = { currentScreen = "cart" },
+                        onBack = { currentScreen = "selection" },
+                        // ✅ Switch directly to Canteen dashboard via TopBar dropdown
+                        onSwitchToCanteen = {
+                            lastActiveDashboard = "dashboard"
+                            currentScreen = "dashboard"
+                        },
+                        ads = ads
+                    )
+
                     "cart" -> CartScreen { currentScreen = "order_success" }
+
                     "order_success" -> OrderSuccessScreen(
-                        onGoHome = { currentScreen = "dashboard" },
+                        onGoHome = { currentScreen = lastActiveDashboard },
                         onViewOrders = { currentScreen = "orders" }
                     )
+
                     "orders" -> OrdersScreen(
-                        onBack = { currentScreen = "dashboard" },
-                        onOpenBill = { qr -> selectedQr = qr; currentScreen = "bill" }
+                        // Dynamic filter based on which shop is currently "active"
+                        locationFilter = if (lastActiveDashboard == "cafeteria_dashboard") "cafeteria" else "canteen",
+                        onBack = { currentScreen = lastActiveDashboard },
+                        onOpenBill = { qr ->
+                            selectedQr = qr
+                            currentScreen = "bill"
+                        }
                     )
-                    "bill" -> selectedQr?.let {
-                        BillWebViewScreen(it) { currentScreen = "orders" }
+
+                    "bill" -> selectedQr?.let { qrCode ->
+                        BillWebViewScreen(qrCode) { currentScreen = "orders" }
                     }
-                    "feedback" -> FeedbackScreen { currentScreen = "dashboard" }
+
+                    "feedback" -> FeedbackScreen(
+                        currentLocation = if (lastActiveDashboard == "cafeteria_dashboard") "cafeteria" else "canteen",
+                        onBack = { currentScreen = lastActiveDashboard }
+                    )
                 }
             }
         }

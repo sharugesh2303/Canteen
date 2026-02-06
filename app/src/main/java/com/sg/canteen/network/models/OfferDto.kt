@@ -8,6 +8,11 @@ data class OfferDto(
     val endDate: String?,
     val startTime: String?,
     val endTime: String?,
+
+    // 📍 LOCATION FIELD (REQUIRED FOR SHOP PERSISTENCE)
+    // Ensures offers are filtered based on the selected shop ("canteen" or "cafeteria")
+    val location: String = "canteen",
+
     val applicableCategories: List<String> = emptyList(),
 
     // ✅ IMPORTANT: sometimes backend returns ids, sometimes populated objects
